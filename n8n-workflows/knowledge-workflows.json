@@ -1,0 +1,209 @@
+[
+  {
+    "id": "knowledgeIndex01",
+    "name": "Knowledge - Index PDF",
+    "description": "Production webhook used by Laravel to index one PDF document.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "knowledge-index",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "f14ad41d-079a-45ea-8206-28b45dff34a2",
+        "name": "Knowledge Index Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -280,
+          0
+        ],
+        "webhookId": "6ea4d0e9-93fd-41be-b3f6-6ddd69cd99cf"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://app:8080/api/internal/rag/index",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.body }}",
+          "options": {
+            "timeout": 600000
+          }
+        },
+        "id": "386021c9-2d67-4bb5-9619-b726ac72e95d",
+        "name": "Index in PHP RAG",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "Knowledge Index Webhook": {
+        "main": [
+          [
+            {
+              "node": "Index in PHP RAG",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "tags": []
+  },
+  {
+    "id": "knowledgeSearch1",
+    "name": "Knowledge - Search PDF",
+    "description": "Production webhook used by Laravel to search one or all indexed PDF documents.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "knowledge-search",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "6db968f8-d6ec-46d6-8efd-98cf1db40de9",
+        "name": "Knowledge Search Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -280,
+          0
+        ],
+        "webhookId": "0ad82819-3aca-482b-9e92-22c6bca812a3"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://app:8080/api/internal/rag/search",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.body }}",
+          "options": {
+            "timeout": 600000
+          }
+        },
+        "id": "978a0255-4c6f-4311-aa2b-60bd4115db0d",
+        "name": "Search in PHP RAG",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "Knowledge Search Webhook": {
+        "main": [
+          [
+            {
+              "node": "Search in PHP RAG",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "tags": []
+  },
+  {
+    "id": "knowledgeDelete1",
+    "name": "Knowledge - Delete PDF Index",
+    "description": "Production webhook used by Laravel to remove document chunks from Qdrant.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "knowledge-delete",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "dc4c42ec-2442-4db4-8708-fd86fc72dfda",
+        "name": "Knowledge Delete Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -280,
+          0
+        ],
+        "webhookId": "36696db3-7a69-407f-a79e-96d56b130639"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://app:8080/api/internal/rag/delete",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.body }}",
+          "options": {
+            "timeout": 600000
+          }
+        },
+        "id": "dff56a7d-37e2-4140-b2c3-357c06fd0acd",
+        "name": "Delete from PHP RAG",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "Knowledge Delete Webhook": {
+        "main": [
+          [
+            {
+              "node": "Delete from PHP RAG",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "tags": []
+  }
+]
