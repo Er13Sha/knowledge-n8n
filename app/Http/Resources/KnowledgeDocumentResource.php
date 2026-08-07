@@ -16,30 +16,31 @@ class KnowledgeDocumentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $doc = $this->resource;
         return [
-            'id' => $this->id,
-            'original_name' => $this->original_name,
-            'size' => $this->size,
-            'human_size' => $this->humanSize(),
-            'status' => $this->status->value,
-            'status_label' => $this->status->label(),
-            'is_searchable' => $this->status->isSearchable(),
-            'indexed_at' => $this->indexed_at?->toISOString(),
-            'error_message' => $this->error_message,
-            'created_at' => $this->created_at?->toISOString(),
+            'id' => $doc->id,
+            'original_name' => $doc->original_name,
+            'size' => $doc->size,
+            'human_size' => $this->humanSize($doc->size),
+            'status' => $doc->status->value,
+            'status_label' => $doc->status->label(),
+            'is_searchable' => $doc->status->isSearchable(),
+            'indexed_at' => $doc->indexed_at?->toISOString(),
+            'error_message' => $doc->error_message,
+            'created_at' => $doc->created_at?->toISOString(),
         ];
     }
 
-    private function humanSize(): string
+    private function humanSize(int $bytes): string
     {
-        if ($this->size < 1024) {
-            return $this->size.' B';
+        if ($bytes < 1024) {
+            return $bytes.' B';
         }
 
-        if ($this->size < 1_048_576) {
-            return round($this->size / 1024, 1).' KB';
+        if ($bytes < 1_048_576) {
+            return round($bytes / 1024, 1).' KB';
         }
 
-        return round($this->size / 1_048_576, 1).' MB';
+        return round($bytes / 1_048_576, 1).' MB';
     }
 }
