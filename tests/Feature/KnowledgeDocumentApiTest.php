@@ -4,6 +4,7 @@ use App\Enums\KnowledgeDocumentStatus;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
 use App\Models\KnowledgeDocument;
+use App\Services\Rag\KnowledgeIndexer;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -50,15 +51,34 @@ test('authenticated user can upload pdf document for indexing', function () {
 
     $this->actingAs($user)
         ->postJson(route('api.knowledge.documents.store'), [
+            'department_id' => 'legal',
+            'title' => 'Политика информационной безопасности',
+            'doc_type' => 'policy',
+            'approved_at' => '2026-08-20',
             'document' => $file,
         ])
         ->assertCreated()
         ->assertJsonPath('data.original_name', 'policy.pdf')
         ->assertJsonPath('data.status', KnowledgeDocumentStatus::Pending->value)
         ->assertJsonPath('data.status_label', KnowledgeDocumentStatus::Pending->label())
-        ->assertJsonPath('data.is_searchable', false);
+        ->assertJsonPath('data.is_searchable', false)
+        ->assertJsonPath('data.title', 'Политика информационной безопасности')
+        ->assertJsonPath('data.department_id', 'legal')
+        ->assertJsonPath('data.department_label', 'Юридический отдел')
+        ->assertJsonPath('data.doc_type', 'policy')
+        ->assertJsonPath('data.doc_type_label', 'Политика')
+        ->assertJsonPath('data.approved_at', '2026-08-20');
 
     $document = KnowledgeDocument::query()->whereBelongsTo($user)->firstOrFail();
+
+    $this->assertDatabaseHas('knowledge', [
+        'id' => $document->knowledge_id,
+        'user_id' => $user->id,
+        'department_id' => 'legal',
+        'title' => 'Политика информационной безопасности',
+        'doc_type' => 'policy',
+        'approved_at' => '2026-08-20 00:00:00',
+    ]);
 
     Storage::disk('local')->assertExists($document->path);
     Queue::assertPushed(IndexKnowledgeDocument::class);
@@ -210,52 +230,36 @@ test('search api returns a clear integration error', function () {
         ->assertJsonPath('message', fn (string $message) => str_contains($message, 'Ошибка поиска n8n'));
 });
 
-test('index job sends pdf document to n8n webhook', function () {
-    config()->set('services.n8n.index_webhook_url', 'https://n8n.test/webhook/index');
-    config()->set('services.rag.internal_token', 'test-token');
-
-    Http::fake([
-        'https://n8n.test/webhook/index' => Http::response(['ok' => true]),
-    ]);
-
-    Storage::fake('local');
-
+test('index job processes the document directly through the rag indexer', function () {
     $document = KnowledgeDocument::factory()->create([
         'path' => 'knowledge-documents/manual.pdf',
     ]);
 
-    Storage::disk('local')->put($document->path, '%PDF-1.4');
+    $this->mock(KnowledgeIndexer::class)
+        ->shouldReceive('index')
+        ->once()
+        ->withArgs(fn (KnowledgeDocument $indexedDocument): bool => $indexedDocument->is($document))
+        ->andReturn(['ok' => true, 'pages' => 3, 'chunks' => 8]);
 
-    (new IndexKnowledgeDocument($document->id))->handle();
-
-    Http::assertSent(fn ($request) => $request->url() === 'https://n8n.test/webhook/index'
-        && $request['token'] === 'test-token'
-        && $request['document_id'] === $document->id
-        && $request['user_id'] === $document->user_id
-        && $request['path'] === $document->path);
+    (new IndexKnowledgeDocument($document->id))->handle(app(KnowledgeIndexer::class));
 
     expect($document->fresh())
         ->status->toBe(KnowledgeDocumentStatus::Indexed)
         ->indexed_at->not->toBeNull();
 });
 
-test('index job records a failed rag response', function () {
-    config()->set('services.n8n.index_webhook_url', 'https://n8n.test/webhook/index');
-    config()->set('services.rag.internal_token', 'test-token');
-
-    Http::fake([
-        'https://n8n.test/webhook/index' => Http::response([
-            'detail' => 'Для сканированных PDF требуется OCR.',
-        ], 422),
-    ]);
-    Storage::fake('local');
-
+test('index job records a failed rag exception', function () {
     $document = KnowledgeDocument::factory()->create([
         'path' => 'knowledge-documents/scanned.pdf',
     ]);
-    Storage::disk('local')->put($document->path, '%PDF-1.4');
 
-    (new IndexKnowledgeDocument($document->id))->handle();
+    $this->mock(KnowledgeIndexer::class)
+        ->shouldReceive('index')
+        ->once()
+        ->andThrow(new RuntimeException('Для сканированных PDF требуется OCR.'));
+
+    expect(fn () => (new IndexKnowledgeDocument($document->id))->handle(app(KnowledgeIndexer::class)))
+        ->toThrow(RuntimeException::class, 'Для сканированных PDF требуется OCR.');
 
     expect($document->fresh())
         ->status->toBe(KnowledgeDocumentStatus::Failed)

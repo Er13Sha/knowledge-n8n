@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests\Knowledge;
 
+use App\Models\Knowledge;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 
 class StoreKnowledgeDocumentRequest extends FormRequest
 {
@@ -20,6 +22,18 @@ class StoreKnowledgeDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'department_id' => [
+                'required',
+                'string',
+                Rule::in(array_column(Knowledge::DepartmentOptions, 'value')),
+            ],
+            'title' => ['required', 'string', 'max:255'],
+            'doc_type' => [
+                'required',
+                'string',
+                Rule::in(array_column(Knowledge::DocumentTypeOptions, 'value')),
+            ],
+            'approved_at' => ['required', 'date'],
             'document' => ['required', 'file', 'mimetypes:application/pdf', 'max:'.self::MaxPdfKilobytes],
         ];
     }

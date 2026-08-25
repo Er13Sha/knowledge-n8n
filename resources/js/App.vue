@@ -1,15 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { apiRequest } from '@/api';
 import LoginView from '@/auth/LoginView.vue';
+import { authApi } from '@/features/auth/api';
 import KnowledgeApp from '@/knowledge/KnowledgeApp.vue';
-
-export type AuthUser = {
-    id: number;
-    name: string;
-    email: string;
-    email_verified_at: string | null;
-};
+import type { AuthUser } from '@/shared/types/auth';
 
 const user = ref<AuthUser | null>(null);
 const isLoading = ref(true);
@@ -36,8 +30,7 @@ function updateUser(updatedUser: AuthUser): void {
 
 async function loadUser(): Promise<void> {
     try {
-        const response = await apiRequest<{ data: AuthUser }>('/api/auth/user');
-        handleAuthenticated(response.data);
+        handleAuthenticated(await authApi.currentUser());
     } catch {
         showLogin();
     } finally {
@@ -46,7 +39,7 @@ async function loadUser(): Promise<void> {
 }
 
 async function logout(): Promise<void> {
-    await apiRequest('/api/auth/logout', { method: 'POST' });
+    await authApi.logout();
     showLogin();
 }
 

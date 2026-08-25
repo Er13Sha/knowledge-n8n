@@ -18,6 +18,7 @@ class KnowledgeDocument extends Model
      */
     protected $fillable = [
         'user_id',
+        'knowledge_id',
         'original_name',
         'disk',
         'path',
@@ -45,5 +46,13 @@ class KnowledgeDocument extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * @return BelongsTo<Knowledge, $this>
+     */
+    public function knowledge(): BelongsTo
+    {
+        return $this->belongsTo(Knowledge::class);
     }
 }

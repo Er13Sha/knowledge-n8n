@@ -17,9 +17,17 @@ class KnowledgeDocumentResource extends JsonResource
     public function toArray(Request $request): array
     {
         $doc = $this->resource;
+        $knowledge = $doc->knowledge;
+
         return [
             'id' => $doc->id,
             'original_name' => $doc->original_name,
+            'title' => $knowledge?->title,
+            'department_id' => $knowledge?->department_id,
+            'department_label' => $knowledge?->departmentLabel(),
+            'doc_type' => $knowledge?->doc_type,
+            'doc_type_label' => $knowledge?->documentTypeLabel(),
+            'approved_at' => $knowledge?->approved_at?->toDateString(),
             'size' => $doc->size,
             'human_size' => $this->humanSize($doc->size),
             'status' => $doc->status->value,
@@ -28,6 +36,7 @@ class KnowledgeDocumentResource extends JsonResource
             'indexed_at' => $doc->indexed_at?->toISOString(),
             'error_message' => $doc->error_message,
             'created_at' => $doc->created_at?->toISOString(),
+            'user_name' => $doc->user?->name,
         ];
     }
 

@@ -39,6 +39,26 @@ test('internal rag api indexes a known document', function () {
         ->assertJson(['ok' => true, 'pages' => 3, 'chunks' => 8]);
 });
 
+test('internal rag api returns the indexing error details', function () {
+    $document = KnowledgeDocument::factory()->create([
+        'original_name' => 'document.pdf',
+        'path' => 'knowledge-documents/document.pdf',
+    ]);
+    $this->mock(KnowledgeIndexer::class)
+        ->shouldReceive('index')
+        ->once()
+        ->andThrow(new RuntimeException('Ollama недоступен.'));
+
+    $this->postJson(route('api.internal.rag.index'), [
+        'token' => 'test-rag-token',
+        'document_id' => $document->id,
+        'user_id' => $document->user_id,
+        'original_name' => $document->original_name,
+        'path' => $document->path,
+    ])->assertStatus(502)
+        ->assertJsonPath('detail', 'Индексация не выполнена: Ollama недоступен.');
+});
+
 test('internal rag api returns search matches', function () {
     $this->mock(KnowledgeSearchEngine::class)
         ->shouldReceive('search')

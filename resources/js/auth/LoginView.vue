@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { apiRequest } from '@/api';
-import type { AuthUser } from '@/App.vue';
+import { authApi } from '@/features/auth/api';
+import type { AuthUser } from '@/shared/types/auth';
 
 const emit = defineEmits<{
     authenticated: [user: AuthUser];
@@ -19,20 +19,14 @@ async function login(): Promise<void> {
     isSubmitting.value = true;
 
     try {
-        const response = await apiRequest<{ data: AuthUser }>(
-            '/api/auth/login',
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: email.value,
-                    password: password.value,
-                    remember: remember.value,
-                }),
-            },
+        emit(
+            'authenticated',
+            await authApi.login({
+                email: email.value,
+                password: password.value,
+                remember: remember.value,
+            }),
         );
-
-        emit('authenticated', response.data);
     } catch (error) {
         errorMessage.value = (error as Error).message;
     } finally {

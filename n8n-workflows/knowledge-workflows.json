@@ -32,7 +32,13 @@
           "specifyBody": "json",
           "jsonBody": "={{ $json.body }}",
           "options": {
-            "timeout": 600000
+            "timeout": 600000,
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            }
           }
         },
         "id": "386021c9-2d67-4bb5-9619-b726ac72e95d",

@@ -8,9 +8,11 @@ use App\Http\Requests\Knowledge\StoreKnowledgeDocumentRequest;
 use App\Http\Resources\KnowledgeDocumentResource;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
+use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -20,6 +22,7 @@ class KnowledgeDocumentController extends Controller
     {
         $documents = KnowledgeDocument::query()
             ->whereBelongsTo($request->user())
+            ->with(['knowledge', 'user'])
             ->latest()
             ->get();
 
@@ -33,16 +36,29 @@ class KnowledgeDocumentController extends Controller
     {
         $uploadedFile = $request->document();
         $path = $uploadedFile->store('knowledge-documents');
+        $validated = $request->validated();
 
-        $document = KnowledgeDocument::query()->create([
-            'user_id' => $request->user()->id,
-            'original_name' => $uploadedFile->getClientOriginalName(),
-            'disk' => 'local',
-            'path' => $path,
-            'mime_type' => $uploadedFile->getMimeType(),
-            'size' => $uploadedFile->getSize() ?: 0,
-            'status' => KnowledgeDocumentStatus::Pending,
-        ]);
+        $document = DB::transaction(function () use ($request, $uploadedFile, $path, $validated): KnowledgeDocument {
+            $knowledge = Knowledge::query()->create([
+                'user_id' => $request->user()->id,
+                'department_id' => $validated['department_id'],
+                'title' => $validated['title'],
+                'doc_type' => $validated['doc_type'],
+                'status' => KnowledgeDocumentStatus::Pending->value,
+                'approved_at' => $validated['approved_at'],
+            ]);
+
+            return KnowledgeDocument::query()->create([
+                'user_id' => $request->user()->id,
+                'knowledge_id' => $knowledge->id,
+                'original_name' => $uploadedFile->getClientOriginalName(),
+                'disk' => 'local',
+                'path' => $path,
+                'mime_type' => $uploadedFile->getMimeType(),
+                'size' => $uploadedFile->getSize() ?: 0,
+                'status' => KnowledgeDocumentStatus::Pending,
+            ]);
+        });
 
         IndexKnowledgeDocument::dispatch($document->id);
 
@@ -80,7 +96,9 @@ class KnowledgeDocumentController extends Controller
         $userId = $knowledgeDocument->user_id;
 
         Storage::disk($knowledgeDocument->disk)->delete($knowledgeDocument->path);
+        $knowledge = $knowledgeDocument->knowledge;
         $knowledgeDocument->delete();
+        $knowledge?->delete();
         DeleteKnowledgeDocumentIndex::dispatch($documentId, $userId);
 
         return response()->json(status: 204);
@@ -105,13 +123,17 @@ class KnowledgeDocumentController extends Controller
     }
 
     /**
-     * @return array{upload: array{max_pdf_mb: int}, services: array{n8n_index_configured: bool, n8n_search_configured: bool, ollama_url: mixed, ollama_model: mixed}}
+     * @return array{upload: array{max_pdf_mb: int}, form: array{departments: list<array{value: string, title: string}>, document_types: list<array{value: string, title: string}>}, services: array{n8n_index_configured: bool, n8n_search_configured: bool, ollama_url: mixed, ollama_model: mixed}}
      */
     private function knowledgeBaseMeta(): array
     {
         return [
             'upload' => [
                 'max_pdf_mb' => intdiv(StoreKnowledgeDocumentRequest::MaxPdfKilobytes, 1024),
+            ],
+            'form' => [
+                'departments' => Knowledge::DepartmentOptions,
+                'document_types' => Knowledge::DocumentTypeOptions,
             ],
             'services' => [
                 'n8n_index_configured' => filled(config('services.n8n.index_webhook_url')),

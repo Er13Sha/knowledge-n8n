@@ -11,6 +11,7 @@ use App\Services\Rag\KnowledgeIndexer;
 use App\Services\Rag\KnowledgeSearchEngine;
 use App\Services\Rag\QdrantVectorStore;
 use Illuminate\Http\JsonResponse;
+use Throwable;
 
 class RagController extends Controller
 {
@@ -23,7 +24,15 @@ class RagController extends Controller
             ->where('path', $request->string('path')->toString())
             ->firstOrFail();
 
-        return response()->json($indexer->index($document));
+        try {
+            return response()->json($indexer->index($document));
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'detail' => 'Индексация не выполнена: '.$exception->getMessage(),
+            ], 502);
+        }
     }
 
     public function search(SearchRequest $request, KnowledgeSearchEngine $searchEngine): JsonResponse
