@@ -25,6 +25,7 @@ class KnowledgeDocument extends Model
         'mime_type',
         'size',
         'status',
+        'index_progress',
         'indexed_at',
         'error_message',
     ];
@@ -36,6 +37,7 @@ class KnowledgeDocument extends Model
     {
         return [
             'status' => KnowledgeDocumentStatus::class,
+            'index_progress' => 'integer',
             'indexed_at' => 'datetime',
         ];
     }

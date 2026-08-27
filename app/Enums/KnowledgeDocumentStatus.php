@@ -12,8 +12,8 @@ enum KnowledgeDocumentStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::Pending => 'Ожидает индексации',
-            self::Processing => 'Индексируется',
+            self::Pending => 'В очереди',
+            self::Processing => 'Идёт индексация',
             self::Indexed => 'Готов к поиску',
             self::Failed => 'Ошибка индексации',
         };

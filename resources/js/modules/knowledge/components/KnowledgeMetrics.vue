@@ -3,6 +3,7 @@ defineProps<{
     documentsCount: number;
     indexedDocumentsCount: number;
     processingDocumentsCount: number;
+    isAdmin: boolean;
     totalStorageSize: string;
 }>();
 </script>
@@ -18,7 +19,7 @@ defineProps<{
                 <strong>{{ documentsCount }}</strong>
             </div>
         </v-sheet>
-        <v-sheet class="metric-tile" border>
+        <v-sheet v-if="isAdmin" class="metric-tile" border>
             <div class="metric-icon metric-icon--success">
                 <v-icon icon="mdi-check-circle-outline" />
             </div>
@@ -27,7 +28,7 @@ defineProps<{
                 <strong>{{ indexedDocumentsCount }}</strong>
             </div>
         </v-sheet>
-        <v-sheet class="metric-tile" border>
+        <v-sheet v-if="isAdmin" class="metric-tile" border>
             <div class="metric-icon metric-icon--warning">
                 <v-icon icon="mdi-progress-clock" />
             </div>
@@ -36,7 +37,7 @@ defineProps<{
                 <strong>{{ processingDocumentsCount }}</strong>
             </div>
         </v-sheet>
-        <v-sheet class="metric-tile" border>
+        <v-sheet v-if="isAdmin" class="metric-tile" border>
             <div class="metric-icon metric-icon--storage">
                 <v-icon icon="mdi-database-outline" />
             </div>

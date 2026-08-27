@@ -5,6 +5,7 @@ import KnowledgeMetrics from '@/modules/knowledge/components/KnowledgeMetrics.vu
 import KnowledgeSearchPanel from '@/modules/knowledge/components/KnowledgeSearchPanel.vue';
 import type {
     KnowledgeDocument,
+    KnowledgeDocumentStatus,
     SearchMode,
     SearchResult,
     SearchSource,
@@ -23,6 +24,7 @@ const props = defineProps<{
     totalStorageSize: string;
     failedDocumentsCount: number;
     isLoadingDocuments: boolean;
+    isAdmin: boolean;
     searchableDocuments: KnowledgeDocument[];
     searchScopeOptions: Array<{
         id: number | null;
@@ -35,27 +37,54 @@ const props = defineProps<{
     searchResult: SearchResult | null;
 }>();
 
+const documentSearch = ref('');
 const selectedDepartmentId = ref<string | null>(null);
 const selectedDocumentType = ref<string | null>(null);
+const selectedStatus = ref<KnowledgeDocumentStatus | null>(null);
 const currentPage = ref(1);
 const pageSize = ref(25);
 const pageSizeOptions = [25, 50, 100];
+const documentStatusOptions: SelectOption[] = [
+    { value: 'pending', title: 'В очереди' },
+    { value: 'processing', title: 'Идёт индексация' },
+    { value: 'indexed', title: 'Готов к поиску' },
+    { value: 'failed', title: 'Ошибка индексации' },
+];
 
-const filteredDocuments = computed(() =>
-    props.documents.filter((document) => {
+const filteredDocuments = computed(() => {
+    const search = documentSearch.value.trim().toLocaleLowerCase();
+
+    return props.documents.filter((document) => {
+        const matchesSearch =
+            !search ||
+            [document.title, document.original_name].some((value) =>
+                value?.toLocaleLowerCase().includes(search),
+            );
         const matchesDepartment =
             !selectedDepartmentId.value ||
             document.department_id === selectedDepartmentId.value;
         const matchesDocumentType =
             !selectedDocumentType.value ||
             document.doc_type === selectedDocumentType.value;
+        const matchesStatus =
+            !selectedStatus.value || document.status === selectedStatus.value;
 
-        return matchesDepartment && matchesDocumentType;
-    }),
-);
+        return (
+            matchesSearch &&
+            matchesDepartment &&
+            matchesDocumentType &&
+            matchesStatus
+        );
+    });
+});
 
 const hasActiveFilters = computed(() =>
-    Boolean(selectedDepartmentId.value || selectedDocumentType.value),
+    Boolean(
+        documentSearch.value.trim() ||
+        selectedDepartmentId.value ||
+        selectedDocumentType.value ||
+        selectedStatus.value,
+    ),
 );
 
 const pageCount = computed(() =>
@@ -84,13 +113,24 @@ const emit = defineEmits<{
 }>();
 
 function clearFilters(): void {
+    documentSearch.value = '';
     selectedDepartmentId.value = null;
     selectedDocumentType.value = null;
+    selectedStatus.value = null;
 }
 
-watch([selectedDepartmentId, selectedDocumentType, pageSize], () => {
-    currentPage.value = 1;
-});
+watch(
+    [
+        documentSearch,
+        selectedDepartmentId,
+        selectedDocumentType,
+        selectedStatus,
+        pageSize,
+    ],
+    () => {
+        currentPage.value = 1;
+    },
+);
 
 watch(pageCount, (count) => {
     if (currentPage.value > count) {
@@ -119,10 +159,21 @@ watch(pageCount, (count) => {
         :documents-count="documents.length"
         :indexed-documents-count="indexedDocumentsCount"
         :processing-documents-count="processingDocumentsCount"
+        :is-admin="isAdmin"
         :total-storage-size="totalStorageSize"
     />
 
     <div class="document-filters">
+        <v-text-field
+            v-model="documentSearch"
+            clearable
+            density="compact"
+            hide-details
+            label="Поиск по названию"
+            placeholder="Название или имя PDF"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+        />
         <v-select
             v-model="selectedDepartmentId"
             clearable
@@ -143,6 +194,18 @@ watch(pageCount, (count) => {
             item-value="value"
             :items="documentTypes"
             label="Тип документа"
+            variant="outlined"
+        />
+        <v-select
+            v-if="isAdmin"
+            v-model="selectedStatus"
+            clearable
+            density="compact"
+            hide-details
+            item-title="title"
+            item-value="value"
+            :items="documentStatusOptions"
+            label="Статус"
             variant="outlined"
         />
         <v-btn
@@ -166,6 +229,7 @@ watch(pageCount, (count) => {
             :failed-documents-count="failedDocumentsCount"
             :filtered-documents-count="filteredDocuments.length"
             :has-active-filters="hasActiveFilters"
+            :is-admin="isAdmin"
             :is-loading-documents="isLoadingDocuments"
             :page="currentPage"
             :page-count="pageCount"

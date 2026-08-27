@@ -3,6 +3,7 @@
 namespace App\Services\Rag;
 
 use App\Models\KnowledgeDocument;
+use Closure;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -15,9 +16,17 @@ class KnowledgeIndexer
         private QdrantVectorStore $vectorStore,
     ) {}
 
-    /** @return array{ok: true, pages: int, chunks: int} */
-    public function index(KnowledgeDocument $document): array
+    /**
+     * @param  (Closure(int): void)|null  $onProgress
+     * @return array{ok: true, pages: int, chunks: int}
+     */
+    public function index(KnowledgeDocument $document, ?Closure $onProgress = null): array
     {
+        $reportProgress = static function (int $progress) use ($onProgress): void {
+            if ($onProgress !== null) {
+                $onProgress($progress);
+            }
+        };
         $disk = Storage::disk($document->disk);
 
         if (! $disk->exists($document->path)) {
@@ -27,12 +36,14 @@ class KnowledgeIndexer
         $preparedDocument = $this->documentProcessor->prepare($disk->path($document->path));
         $pages = $preparedDocument['pages'];
         $chunks = $preparedDocument['chunks'];
+        $reportProgress(25);
 
         if ($chunks === []) {
             throw new RuntimeException('В PDF нет текста, который удалось извлечь или распознать.');
         }
 
         $vectors = $this->ollamaClient->embed(array_column($chunks, 'text'));
+        $reportProgress(55);
         $this->vectorStore->ensureCollection(count($vectors[0]));
         $this->vectorStore->deleteDocument($document->id, $document->user_id);
         $points = [];
@@ -52,7 +63,9 @@ class KnowledgeIndexer
             ];
         }
 
+        $reportProgress(80);
         $this->vectorStore->upsert($points);
+        $reportProgress(95);
 
         return ['ok' => true, 'pages' => count($pages), 'chunks' => count($chunks)];
     }

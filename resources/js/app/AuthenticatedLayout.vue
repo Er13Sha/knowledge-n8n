@@ -91,6 +91,11 @@ const { currentRoute, navigate: navigateTo } = useAppRouter();
 const currentSection = computed(() => currentRoute.value.section);
 const pageTitle = computed(() => currentRoute.value.title);
 const modelName = computed(() => meta.value?.services.ollama_model ?? '');
+const isAdmin = computed(
+    () =>
+        props.user.is_super_admin === true ||
+        props.user.roles?.some((role) => role.key === 'admin') === true,
+);
 const canCreateKnowledge = computed(
     () =>
         props.user.is_super_admin === true ||
@@ -225,7 +230,7 @@ onBeforeUnmount(() => {
             <v-container class="admin-container" fluid>
                 <KnowledgeBasePage
                     v-if="currentSection === 'knowledge'"
-                    :departments="meta?.form.departments ?? []"
+                    :departments="meta?.filters.departments ?? []"
                     :document-types="meta?.form.document_types ?? []"
                     :documents="documents"
                     :can-create="canCreateKnowledge"
@@ -233,6 +238,7 @@ onBeforeUnmount(() => {
                     :can-update="canUpdateKnowledge"
                     :failed-documents-count="failedDocumentsCount"
                     :indexed-documents-count="indexedDocumentsCount"
+                    :is-admin="isAdmin"
                     :is-loading-documents="isLoadingDocuments"
                     :is-searching="isSearching"
                     :processing-documents-count="processingDocumentsCount"
@@ -262,6 +268,7 @@ onBeforeUnmount(() => {
                     :are-core-services-configured="areCoreServicesConfigured"
                     :documents="documents"
                     :indexed-documents-count="indexedDocumentsCount"
+                    :is-admin="isAdmin"
                     :model-name="modelName"
                     :processing-documents-count="processingDocumentsCount"
                     :total-storage-size="totalStorageSize"
@@ -295,6 +302,7 @@ onBeforeUnmount(() => {
             v-model="detailsDialogOpen"
             :can-edit="canUpdateKnowledge"
             :document="selectedDocument"
+            :is-admin="isAdmin"
             @edit="selectedDocument && openDocumentEdit(selectedDocument)"
             @open-pdf="openSelectedDocumentPdf"
         />

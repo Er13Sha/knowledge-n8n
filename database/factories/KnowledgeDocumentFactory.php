@@ -27,6 +27,7 @@ class KnowledgeDocumentFactory extends Factory
             'mime_type' => 'application/pdf',
             'size' => fake()->numberBetween(10_000, 2_000_000),
             'status' => KnowledgeDocumentStatus::Pending,
+            'index_progress' => 0,
             'indexed_at' => null,
             'error_message' => null,
         ];
@@ -36,6 +37,7 @@ class KnowledgeDocumentFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'status' => KnowledgeDocumentStatus::Indexed,
+            'index_progress' => 100,
             'indexed_at' => now(),
             'error_message' => null,
         ]);

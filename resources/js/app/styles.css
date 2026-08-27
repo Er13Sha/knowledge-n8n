@@ -518,6 +518,27 @@ body {
     display: none !important;
 }
 
+.document-status-cell {
+    display: flex;
+    min-width: 150px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.document-progress {
+    display: flex;
+    width: 150px;
+    align-items: center;
+    gap: 8px;
+    color: #717680;
+    font-size: 11px;
+}
+
+.document-progress .v-progress-linear {
+    flex: 1;
+}
+
 .table-secondary {
     color: #717680;
     font-size: 13px;

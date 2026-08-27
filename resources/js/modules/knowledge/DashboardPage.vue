@@ -8,6 +8,7 @@ defineProps<{
     documents: KnowledgeDocument[];
     indexedDocumentsCount: number;
     processingDocumentsCount: number;
+    isAdmin: boolean;
     totalStorageSize: string;
     areCoreServicesConfigured: boolean;
     modelName: string;
@@ -36,6 +37,7 @@ const emit = defineEmits<{
     <KnowledgeMetrics
         :documents-count="documents.length"
         :indexed-documents-count="indexedDocumentsCount"
+        :is-admin="isAdmin"
         :processing-documents-count="processingDocumentsCount"
         :total-storage-size="totalStorageSize"
     />
@@ -58,6 +60,7 @@ const emit = defineEmits<{
                 >
                     <template #append>
                         <v-chip
+                            v-if="isAdmin"
                             :color="statusColor(document.status)"
                             size="small"
                             variant="tonal"

@@ -9,15 +9,18 @@ use App\Http\Requests\Knowledge\UpdateKnowledgeDocumentRequest;
 use App\Http\Resources\KnowledgeDocumentResource;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
+use App\Models\Department;
 use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
 use App\Models\User;
 use App\Services\Access\AccessManager;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class KnowledgeDocumentController extends Controller
@@ -26,11 +29,59 @@ class KnowledgeDocumentController extends Controller
     {
         Gate::authorize('viewAny', KnowledgeDocument::class);
 
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'department_id' => [
+                'nullable',
+                'string',
+                Rule::exists('departments', 'code')->where('is_active', true),
+            ],
+            'doc_type' => [
+                'nullable',
+                'string',
+                Rule::in(array_column(Knowledge::DocumentTypeOptions, 'value')),
+            ],
+            'status' => [
+                'nullable',
+                'string',
+                Rule::in(array_column(KnowledgeDocumentStatus::cases(), 'value')),
+            ],
+        ]);
+
         $documents = app(AccessManager::class)
             ->visibleDocuments($request->user())
-            ->with(['knowledge', 'user'])
-            ->latest()
-            ->get();
+            ->with(['knowledge.department', 'user']);
+
+        $search = mb_strtolower(trim((string) ($filters['search'] ?? '')));
+
+        if ($search !== '') {
+            $pattern = '%'.$search.'%';
+            $documents->where(function (Builder $query) use ($pattern): void {
+                $query
+                    ->whereRaw('LOWER(original_name) LIKE ?', [$pattern])
+                    ->orWhereHas('knowledge', function (Builder $knowledgeQuery) use ($pattern): void {
+                        $knowledgeQuery->whereRaw('LOWER(title) LIKE ?', [$pattern]);
+                    });
+            });
+        }
+
+        if (filled($filters['department_id'] ?? null)) {
+            $documents->whereHas('knowledge', function (Builder $query) use ($filters): void {
+                $query->where('department_id', $filters['department_id']);
+            });
+        }
+
+        if (filled($filters['doc_type'] ?? null)) {
+            $documents->whereHas('knowledge', function (Builder $query) use ($filters): void {
+                $query->where('doc_type', $filters['doc_type']);
+            });
+        }
+
+        if (filled($filters['status'] ?? null)) {
+            $documents->where('status', $filters['status']);
+        }
+
+        $documents = $documents->latest()->get();
 
         return response()->json([
             'data' => KnowledgeDocumentResource::collection($documents)->resolve(),
@@ -40,9 +91,18 @@ class KnowledgeDocumentController extends Controller
 
     public function store(StoreKnowledgeDocumentRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+        abort_unless(
+            app(AccessManager::class)->canAccessDepartment(
+                $request->user(),
+                $validated['department_id'],
+                AccessManager::KnowledgeCreate,
+            ),
+            403,
+        );
+
         $uploadedFile = $request->document();
         $path = $uploadedFile->store('knowledge-documents');
-        $validated = $request->validated();
 
         $document = DB::transaction(function () use ($request, $uploadedFile, $path, $validated): KnowledgeDocument {
             $knowledge = Knowledge::query()->create([
@@ -63,6 +123,7 @@ class KnowledgeDocumentController extends Controller
                 'mime_type' => $uploadedFile->getMimeType(),
                 'size' => $uploadedFile->getSize() ?: 0,
                 'status' => KnowledgeDocumentStatus::Pending,
+                'index_progress' => 0,
             ]);
         });
 
@@ -77,14 +138,10 @@ class KnowledgeDocumentController extends Controller
     public function show(Request $request, KnowledgeDocument $knowledgeDocument): StreamedResponse
     {
         Gate::authorize('viewAny', KnowledgeDocument::class);
-        abort_unless(
-            app(AccessManager::class)->canAccessDocument(
-                $request->user(),
-                $knowledgeDocument,
-                AccessManager::KnowledgeRead,
-            ),
-            404,
-        );
+        $knowledgeDocument = app(AccessManager::class)
+            ->visibleDocuments($request->user())
+            ->whereKey($knowledgeDocument->getKey())
+            ->firstOrFail();
 
         $disk = Storage::disk($knowledgeDocument->disk);
 
@@ -104,6 +161,11 @@ class KnowledgeDocumentController extends Controller
 
     public function destroy(Request $request, KnowledgeDocument $knowledgeDocument): JsonResponse
     {
+        $knowledgeDocument = app(AccessManager::class)
+            ->visibleDocuments($request->user())
+            ->whereKey($knowledgeDocument->getKey())
+            ->firstOrFail();
+
         Gate::authorize('delete', $knowledgeDocument);
 
         $documentId = $knowledgeDocument->id;
@@ -120,10 +182,16 @@ class KnowledgeDocumentController extends Controller
 
     public function retryIndexing(Request $request, KnowledgeDocument $knowledgeDocument): JsonResponse
     {
+        $knowledgeDocument = app(AccessManager::class)
+            ->visibleDocuments($request->user())
+            ->whereKey($knowledgeDocument->getKey())
+            ->firstOrFail();
+
         Gate::authorize('update', $knowledgeDocument);
 
         $knowledgeDocument->forceFill([
             'status' => KnowledgeDocumentStatus::Pending,
+            'index_progress' => 0,
             'error_message' => null,
             'indexed_at' => null,
         ])->save();
@@ -138,20 +206,35 @@ class KnowledgeDocumentController extends Controller
 
     public function update(UpdateKnowledgeDocumentRequest $request, KnowledgeDocument $knowledgeDocument): JsonResponse
     {
+        $knowledgeDocument = app(AccessManager::class)
+            ->visibleDocuments($request->user())
+            ->whereKey($knowledgeDocument->getKey())
+            ->firstOrFail();
+
         Gate::authorize('update', $knowledgeDocument);
 
         $knowledge = $knowledgeDocument->knowledge;
         abort_unless($knowledge !== null, 404);
 
-        $knowledge->update($request->validated());
+        $validated = $request->validated();
+        abort_unless(
+            app(AccessManager::class)->canAccessDepartment(
+                $request->user(),
+                $validated['department_id'],
+                AccessManager::KnowledgeUpdate,
+            ),
+            403,
+        );
+
+        $knowledge->update($validated);
 
         return response()->json([
-            'data' => KnowledgeDocumentResource::make($knowledgeDocument->fresh(['knowledge', 'user']))->resolve(),
+            'data' => KnowledgeDocumentResource::make($knowledgeDocument->fresh(['knowledge.department', 'user']))->resolve(),
         ]);
     }
 
     /**
-     * @return array{upload: array{max_pdf_mb: int}, form: array{departments: list<array{value: string, title: string}>, document_types: list<array{value: string, title: string}>}, services: array{n8n_index_configured: bool, n8n_search_configured: bool, ollama_url: mixed, ollama_model: mixed}}
+     * @return array{upload: array{max_pdf_mb: int}, form: array{departments: list<array{value: string, title: string}>, document_types: list<array{value: string, title: string}>}, filters: array{departments: list<array{value: string, title: string}>}, services: array{n8n_index_configured: bool, n8n_search_configured: bool, ollama_url: mixed, ollama_model: mixed}}
      */
     private function knowledgeBaseMeta(User $user): array
     {
@@ -162,8 +245,25 @@ class KnowledgeDocumentController extends Controller
                 'max_pdf_mb' => intdiv(StoreKnowledgeDocumentRequest::MaxPdfKilobytes, 1024),
             ],
             'form' => [
-                'departments' => Knowledge::DepartmentOptions,
+                'departments' => array_values(array_filter(
+                    Department::options(),
+                    fn (array $department): bool => $access->canAccessDepartment(
+                        $user,
+                        $department['value'],
+                        AccessManager::KnowledgeCreate,
+                    ),
+                )),
                 'document_types' => Knowledge::DocumentTypeOptions,
+            ],
+            'filters' => [
+                'departments' => array_values(array_filter(
+                    Department::options(),
+                    fn (array $department): bool => $access->canAccessDepartment(
+                        $user,
+                        $department['value'],
+                        AccessManager::KnowledgeRead,
+                    ),
+                )),
             ],
             'services' => [
                 'n8n_index_configured' => filled(config('services.n8n.index_webhook_url')),

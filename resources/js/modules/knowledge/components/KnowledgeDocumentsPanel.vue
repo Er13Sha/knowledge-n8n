@@ -13,6 +13,7 @@ defineProps<{
     hasActiveFilters: boolean;
     selectedDocumentId: number | null;
     isLoadingDocuments: boolean;
+    isAdmin: boolean;
     failedDocumentsCount: number;
     page: number;
     pageCount: number;
@@ -47,7 +48,7 @@ const emit = defineEmits<{
             </div>
             <div class="panel-actions">
                 <v-chip
-                    v-if="failedDocumentsCount"
+                    v-if="isAdmin && failedDocumentsCount"
                     color="error"
                     size="small"
                     variant="tonal"
@@ -120,8 +121,8 @@ const emit = defineEmits<{
                         <th>Документ</th>
                         <th>Отдел</th>
                         <th>Тип</th>
-                        <th>Статус</th>
-                        <th>Размер</th>
+                        <th v-if="isAdmin">Статус</th>
+                        <th v-if="isAdmin">Размер</th>
                         <th>Добавлен</th>
                         <th aria-label="Действия" />
                     </tr>
@@ -159,7 +160,7 @@ const emit = defineEmits<{
                                         {{ document.original_name }}
                                     </span>
                                     <span
-                                        v-if="document.error_message"
+                                        v-if="isAdmin && document.error_message"
                                         class="document-error"
                                     >
                                         {{ document.error_message }}
@@ -168,6 +169,7 @@ const emit = defineEmits<{
                                         ID {{ document.id }}
                                     </span>
                                     <v-chip
+                                        v-if="isAdmin"
                                         class="mobile-document-status"
                                         :color="statusColor(document.status)"
                                         size="x-small"
@@ -184,17 +186,31 @@ const emit = defineEmits<{
                         <td class="table-secondary">
                             {{ document.doc_type_label || '—' }}
                         </td>
-                        <td>
-                            <v-chip
-                                :color="statusColor(document.status)"
-                                :prepend-icon="statusIcon(document.status)"
-                                size="small"
-                                variant="tonal"
-                            >
-                                {{ document.status_label }}
-                            </v-chip>
+                        <td v-if="isAdmin">
+                            <div class="document-status-cell">
+                                <v-chip
+                                    :color="statusColor(document.status)"
+                                    :prepend-icon="statusIcon(document.status)"
+                                    size="small"
+                                    variant="tonal"
+                                >
+                                    {{ document.status_label }}
+                                </v-chip>
+                                <div
+                                    v-if="document.status === 'processing'"
+                                    class="document-progress"
+                                >
+                                    <v-progress-linear
+                                        :model-value="document.index_progress"
+                                        color="info"
+                                        height="4"
+                                        rounded
+                                    />
+                                    <span>{{ document.index_progress }}%</span>
+                                </div>
+                            </div>
                         </td>
-                        <td class="table-secondary">
+                        <td v-if="isAdmin" class="table-secondary">
                             {{ document.human_size }}
                         </td>
                         <td class="table-secondary">

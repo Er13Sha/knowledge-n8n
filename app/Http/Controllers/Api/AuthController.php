@@ -19,7 +19,7 @@ class AuthController extends Controller
 
         return response()->json([
             'data' => array_merge($user->toArray(), [
-                'roles' => $user->roles()->get(['key', 'name']),
+                'roles' => $user->roles()->get(['key', 'name', 'scope']),
                 'permissions' => $accessManager->permissionKeys($user),
             ]),
         ]);

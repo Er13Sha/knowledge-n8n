@@ -87,7 +87,7 @@ return [
                 ],
             ],
             'options' => [
-                'heartbeat' => (int) env('RABBITMQ_HEARTBEAT', 30),
+                'heartbeat' => (int) env('RABBITMQ_HEARTBEAT', 1200),
                 'connection_timeout' => (float) env('RABBITMQ_CONNECTION_TIMEOUT', 5),
                 'read_timeout' => (float) env('RABBITMQ_READ_TIMEOUT', 65),
                 'write_timeout' => (float) env('RABBITMQ_WRITE_TIMEOUT', 10),

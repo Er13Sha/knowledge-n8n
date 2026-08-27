@@ -11,17 +11,6 @@ class Knowledge extends Model
     /**
      * @var list<array{value: string, title: string}>
      */
-    public const array DepartmentOptions = [
-        ['value' => 'management', 'title' => 'Руководство'],
-        ['value' => 'hr', 'title' => 'Отдел кадров'],
-        ['value' => 'finance', 'title' => 'Финансовый отдел'],
-        ['value' => 'legal', 'title' => 'Юридический отдел'],
-        ['value' => 'it', 'title' => 'IT-отдел'],
-    ];
-
-    /**
-     * @var list<array{value: string, title: string}>
-     */
     public const array DocumentTypeOptions = [
         ['value' => 'order', 'title' => 'Приказ'],
         ['value' => 'regulation', 'title' => 'Положение'],
@@ -58,6 +47,12 @@ class Knowledge extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return BelongsTo<Department, $this> */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id', 'code');
+    }
+
     /**
      * @return HasOne<KnowledgeDocument, $this>
      */
@@ -68,21 +63,13 @@ class Knowledge extends Model
 
     public function departmentLabel(): ?string
     {
-        return $this->optionLabel(self::DepartmentOptions, $this->department_id);
+        return $this->department?->name;
     }
 
     public function documentTypeLabel(): ?string
     {
-        return $this->optionLabel(self::DocumentTypeOptions, $this->doc_type);
-    }
-
-    /**
-     * @param list<array{value: string, title: string}> $options
-     */
-    private function optionLabel(array $options, ?string $value): ?string
-    {
-        foreach ($options as $option) {
-            if ($option['value'] === $value) {
+        foreach (self::DocumentTypeOptions as $option) {
+            if ($option['value'] === $this->doc_type) {
                 return $option['title'];
             }
         }

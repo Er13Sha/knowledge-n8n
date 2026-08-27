@@ -7,6 +7,8 @@ use App\Http\Requests\Internal\Rag\DeleteDocumentRequest;
 use App\Http\Requests\Internal\Rag\IndexDocumentRequest;
 use App\Http\Requests\Internal\Rag\SearchRequest;
 use App\Models\KnowledgeDocument;
+use App\Models\User;
+use App\Services\Access\AccessManager;
 use App\Services\Rag\KnowledgeIndexer;
 use App\Services\Rag\KnowledgeSearchEngine;
 use App\Services\Rag\QdrantVectorStore;
@@ -35,14 +37,41 @@ class RagController extends Controller
         }
     }
 
-    public function search(SearchRequest $request, KnowledgeSearchEngine $searchEngine): JsonResponse
-    {
+    public function search(
+        SearchRequest $request,
+        KnowledgeSearchEngine $searchEngine,
+        AccessManager $accessManager,
+    ): JsonResponse {
+        $user = User::query()->findOrFail($request->integer('user_id'));
+        abort_unless($accessManager->allows($user, AccessManager::KnowledgeRead), 403);
+
+        $requestedDocumentIds = array_values(array_unique(array_map(
+            'intval',
+            $request->input('document_ids', []),
+        )));
+        $visibleDocuments = $accessManager->visibleDocuments($user);
+
+        if ($request->filled('document_id')) {
+            abort_unless(
+                (clone $visibleDocuments)->whereKey($request->integer('document_id'))->exists(),
+                404,
+            );
+        }
+
+        $documentIds = $requestedDocumentIds === []
+            ? []
+            : (clone $visibleDocuments)->whereIn('id', $requestedDocumentIds)->pluck('id')->map(fn (int $id): int => $id)->all();
+
+        if ($requestedDocumentIds !== [] && $documentIds === []) {
+            $documentIds = [0];
+        }
+
         return response()->json($searchEngine->search(
-            $request->integer('user_id'),
+            $user->id,
             $request->string('question')->toString(),
             $request->filled('document_id') ? $request->integer('document_id') : null,
             $request->string('mode', 'rag')->toString(),
-            array_map('intval', $request->input('document_ids', [])),
+            $documentIds,
             $request->input('history', []),
         ));
     }

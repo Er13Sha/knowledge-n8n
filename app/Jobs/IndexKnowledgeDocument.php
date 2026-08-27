@@ -25,27 +25,29 @@ class IndexKnowledgeDocument implements ShouldQueue
     {
         $document = KnowledgeDocument::query()->findOrFail($this->knowledgeDocumentId);
 
+        if (
+            $document->status === KnowledgeDocumentStatus::Indexed
+            && $document->index_progress >= 100
+        ) {
+            return;
+        }
+
         $document->forceFill([
             'status' => KnowledgeDocumentStatus::Processing,
+            'index_progress' => 5,
             'error_message' => null,
         ])->save();
 
-        try {
-            $indexer->index($document);
+        $indexer->index($document, function (int $progress) use ($document): void {
+            $document->forceFill(['index_progress' => $progress])->save();
+        });
 
-            $document->forceFill([
-                'status' => KnowledgeDocumentStatus::Indexed,
-                'indexed_at' => now(),
-                'error_message' => null,
-            ])->save();
-        } catch (Throwable $exception) {
-            $document->forceFill([
-                'status' => KnowledgeDocumentStatus::Failed,
-                'error_message' => $exception->getMessage(),
-            ])->save();
-
-            throw $exception;
-        }
+        $document->forceFill([
+            'status' => KnowledgeDocumentStatus::Indexed,
+            'index_progress' => 100,
+            'indexed_at' => now(),
+            'error_message' => null,
+        ])->save();
     }
 
     public function failed(Throwable $exception): void

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { statusColor, statusIcon } from '@/modules/knowledge/presentation';
 import type { KnowledgeDocument } from '@/modules/knowledge/types';
 
 defineProps<{
     modelValue: boolean;
     document: KnowledgeDocument | null;
     canEdit: boolean;
+    isAdmin: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -75,13 +77,38 @@ function formatApprovalDate(value: string | null): string {
                         <span>Прикреплённый файл</span>
                         <strong>{{ document.original_name }}</strong>
                     </div>
-                    <div class="document-info-item">
+                    <div v-if="isAdmin" class="document-info-item">
                         <span>Размер</span>
                         <strong>{{ document.human_size }}</strong>
                     </div>
+                    <div v-if="isAdmin" class="document-info-item">
+                        <span>Статус</span>
+                        <div>
+                            <v-chip
+                                :color="statusColor(document.status)"
+                                :prepend-icon="statusIcon(document.status)"
+                                size="small"
+                                variant="tonal"
+                            >
+                                {{ document.status_label }}
+                            </v-chip>
+                            <div
+                                v-if="document.status === 'processing'"
+                                class="mt-2"
+                            >
+                                <v-progress-linear
+                                    :model-value="document.index_progress"
+                                    color="info"
+                                    height="5"
+                                    rounded
+                                />
+                                <small>{{ document.index_progress }}%</small>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <v-alert
-                    v-if="document.error_message"
+                    v-if="isAdmin && document.error_message"
                     class="mt-4"
                     density="compact"
                     type="error"

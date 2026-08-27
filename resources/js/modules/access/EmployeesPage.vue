@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { adminApi } from '@/modules/access/api';
 import type {
+    AdminDepartment,
     AdminEmployee,
     AdminMeta,
+    AdminRole,
+    DepartmentFormData,
     EmployeeFormData,
+    RoleFormData,
 } from '@/modules/access/types';
 
 const emit = defineEmits<{
@@ -12,35 +16,45 @@ const emit = defineEmits<{
 }>();
 
 const employees = ref<AdminEmployee[]>([]);
+const departments = ref<AdminDepartment[]>([]);
 const meta = ref<AdminMeta | null>(null);
 const isLoading = ref(false);
 const isSaving = ref(false);
 const activeTab = ref('employees');
 const employeeDialogOpen = ref(false);
+const roleDialogOpen = ref(false);
+const departmentDialogOpen = ref(false);
 const editingEmployee = ref<AdminEmployee | null>(null);
-const selectedRoleKey = ref('');
-const selectedDepartmentId = ref('');
-const rolePermissionDraft = ref<Record<string, string[]>>({});
-const departmentPermissionDraft = ref<Record<string, string[]>>({});
-const form = ref<EmployeeFormData>(emptyForm());
+const editingRole = ref<AdminRole | null>(null);
+const editingDepartment = ref<AdminDepartment | null>(null);
+const form = ref<EmployeeFormData>(emptyEmployeeForm());
+const roleForm = ref<RoleFormData>(emptyRoleForm());
+const departmentForm = ref<DepartmentFormData>(emptyDepartmentForm());
 
-const selectedRole = computed(
-    () =>
-        meta.value?.roles.find((role) => role.key === selectedRoleKey.value) ??
-        null,
-);
-const selectedDepartmentPermissions = computed(
-    () => departmentPermissionDraft.value[selectedDepartmentId.value] ?? [],
-);
-
-function emptyForm(): EmployeeFormData {
+function emptyEmployeeForm(): EmployeeFormData {
     return {
         name: '',
         email: '',
         password: '',
         department_id: null,
         roles: [],
+    };
+}
+
+function emptyRoleForm(): RoleFormData {
+    return {
+        key: '',
+        name: '',
+        scope: 'department',
         permissions: [],
+    };
+}
+
+function emptyDepartmentForm(): DepartmentFormData {
+    return {
+        code: '',
+        name: '',
+        is_active: true,
     };
 }
 
@@ -52,21 +66,13 @@ async function load(): Promise<void> {
     isLoading.value = true;
 
     try {
-        const response = await adminApi.employees();
-        employees.value = response.data;
-        meta.value = response.meta;
-        rolePermissionDraft.value = Object.fromEntries(
-            response.meta.roles.map((role) => [
-                role.key,
-                [...role.permissions],
-            ]),
-        );
-        departmentPermissionDraft.value = {
-            ...response.meta.department_permissions,
-        };
-        selectedRoleKey.value ||= response.meta.roles[0]?.key ?? '';
-        selectedDepartmentId.value ||=
-            response.meta.departments[0]?.value ?? '';
+        const [employeesResponse, departmentsResponse] = await Promise.all([
+            adminApi.employees(),
+            adminApi.departments(),
+        ]);
+        employees.value = employeesResponse.data;
+        meta.value = employeesResponse.meta;
+        departments.value = departmentsResponse.data;
     } catch (error) {
         notify((error as Error).message, 'error');
     } finally {
@@ -76,7 +82,7 @@ async function load(): Promise<void> {
 
 function openCreate(): void {
     editingEmployee.value = null;
-    form.value = emptyForm();
+    form.value = emptyEmployeeForm();
     employeeDialogOpen.value = true;
 }
 
@@ -88,9 +94,45 @@ function openEdit(employee: AdminEmployee): void {
         password: '',
         department_id: employee.department_id,
         roles: employee.roles.map((role) => role.key),
-        permissions: [...employee.permissions],
     };
     employeeDialogOpen.value = true;
+}
+
+function openCreateRole(): void {
+    editingRole.value = null;
+    roleForm.value = emptyRoleForm();
+    roleDialogOpen.value = true;
+}
+
+function openEditRole(role: AdminRole): void {
+    if (role.is_system) {
+        return;
+    }
+
+    editingRole.value = role;
+    roleForm.value = {
+        key: role.key,
+        name: role.name,
+        scope: role.scope,
+        permissions: [...role.permissions],
+    };
+    roleDialogOpen.value = true;
+}
+
+function openCreateDepartment(): void {
+    editingDepartment.value = null;
+    departmentForm.value = emptyDepartmentForm();
+    departmentDialogOpen.value = true;
+}
+
+function openEditDepartment(department: AdminDepartment): void {
+    editingDepartment.value = department;
+    departmentForm.value = {
+        code: department.code,
+        name: department.name,
+        is_active: department.is_active,
+    };
+    departmentDialogOpen.value = true;
 }
 
 async function saveEmployee(): Promise<void> {
@@ -123,79 +165,90 @@ async function saveEmployee(): Promise<void> {
     }
 }
 
-function togglePermission(
-    target: string[],
-    key: string,
-    enabled: boolean,
-): void {
-    const index = target.indexOf(key);
-
-    if (enabled && index === -1) {
-        target.push(key);
+async function saveRole(): Promise<void> {
+    if (!meta.value) {
+        return;
     }
 
-    if (!enabled && index !== -1) {
-        target.splice(index, 1);
+    isSaving.value = true;
+
+    try {
+        const role = editingRole.value
+            ? await adminApi.updateRole(editingRole.value, roleForm.value)
+            : await adminApi.createRole(roleForm.value);
+        const index = meta.value.roles.findIndex(
+            (item) => item.key === role.key,
+        );
+
+        if (index === -1) {
+            meta.value.roles.push(role);
+        } else {
+            meta.value.roles[index] = role;
+        }
+
+        roleDialogOpen.value = false;
+        notify('Роль сохранена.');
+    } catch (error) {
+        notify((error as Error).message, 'error');
+    } finally {
+        isSaving.value = false;
     }
 }
 
-function toggleRolePermission(
-    key: string,
-    permission: string,
-    enabled: boolean,
-): void {
-    rolePermissionDraft.value[key] ??= [];
-    togglePermission(rolePermissionDraft.value[key], permission, enabled);
-}
-
-function toggleDepartmentPermission(
-    permission: string,
-    enabled: boolean,
-): void {
-    departmentPermissionDraft.value[selectedDepartmentId.value] ??= [];
-    togglePermission(
-        departmentPermissionDraft.value[selectedDepartmentId.value],
-        permission,
-        enabled,
-    );
-}
-
-async function saveRolePermissions(): Promise<void> {
-    if (!selectedRole.value || !meta.value) {
+async function deleteRole(role: AdminRole): Promise<void> {
+    if (role.is_system || !window.confirm(`Удалить роль «${role.name}»?`)) {
         return;
     }
 
     try {
-        const role = await adminApi.updateRole(
-            selectedRole.value,
-            rolePermissionDraft.value[selectedRole.value.key] ?? [],
-        );
-        const roleIndex = meta.value.roles.findIndex(
-            (item) => item.key === role.key,
-        );
-
-        if (roleIndex !== -1) {
-            meta.value.roles[roleIndex] = role;
+        await adminApi.deleteRole(role);
+        if (meta.value) {
+            meta.value.roles = meta.value.roles.filter(
+                (item) => item.key !== role.key,
+            );
         }
-
-        notify('Права роли обновлены.');
+        notify('Роль удалена.');
     } catch (error) {
         notify((error as Error).message, 'error');
     }
 }
 
-async function saveDepartmentPermissions(): Promise<void> {
-    if (!selectedDepartmentId.value) {
+async function saveDepartment(): Promise<void> {
+    isSaving.value = true;
+
+    try {
+        if (editingDepartment.value) {
+            await adminApi.updateDepartment(
+                editingDepartment.value.code,
+                departmentForm.value,
+            );
+        } else {
+            await adminApi.createDepartment(departmentForm.value);
+        }
+
+        departmentDialogOpen.value = false;
+        await load();
+        notify('Отдел сохранён.');
+    } catch (error) {
+        notify((error as Error).message, 'error');
+    } finally {
+        isSaving.value = false;
+    }
+}
+
+async function deleteDepartment(department: AdminDepartment): Promise<void> {
+    if (
+        department.users_count > 0 ||
+        department.knowledge_count > 0 ||
+        !window.confirm(`Удалить отдел «${department.name}»?`)
+    ) {
         return;
     }
 
     try {
-        departmentPermissionDraft.value[selectedDepartmentId.value] =
-            await adminApi.updateDepartment(
-                selectedDepartmentId.value,
-                selectedDepartmentPermissions.value,
-            );
-        notify('Права отдела обновлены.');
+        await adminApi.deleteDepartment(department.code);
+        await load();
+        notify('Отдел удалён.');
     } catch (error) {
         notify((error as Error).message, 'error');
     }
@@ -254,11 +307,11 @@ onMounted(load);
                             </td>
                             <td>
                                 {{
-                                    meta?.departments.find(
+                                    departments.find(
                                         (department) =>
-                                            department.value ===
+                                            department.code ===
                                             employee.department_id,
-                                    )?.title || '—'
+                                    )?.name || '—'
                                 }}
                             </td>
                             <td>
@@ -294,70 +347,148 @@ onMounted(load);
             </v-window-item>
 
             <v-window-item value="roles" class="pa-5">
-                <v-select
-                    v-model="selectedRoleKey"
-                    item-title="name"
-                    item-value="key"
-                    :items="meta?.roles ?? []"
-                    label="Роль"
-                    variant="outlined"
-                />
-                <div v-if="selectedRole" class="access-list">
-                    <v-checkbox
-                        v-for="permission in meta?.permissions ?? []"
-                        :key="permission.key"
-                        :label="permission.name"
-                        :model-value="
-                            rolePermissionDraft[selectedRole.key]?.includes(
-                                permission.key,
-                            )
-                        "
-                        hide-details
-                        @update:model-value="
-                            toggleRolePermission(
-                                selectedRole.key,
-                                permission.key,
-                                $event === true,
-                            )
-                        "
-                    />
+                <div class="d-flex justify-space-between align-center mb-4">
+                    <div>
+                        <h3>Кастомные роли</h3>
+                        <p class="table-secondary">
+                            Системные роли нельзя изменить или удалить.
+                        </p>
+                    </div>
+                    <v-btn color="primary" @click="openCreateRole">
+                        Добавить роль
+                    </v-btn>
                 </div>
-                <v-btn color="primary" @click="saveRolePermissions">
-                    Сохранить права роли
-                </v-btn>
+                <v-list lines="two">
+                    <v-list-item
+                        v-for="role in meta?.roles ?? []"
+                        :key="role.key"
+                    >
+                        <template #prepend>
+                            <v-icon
+                                :icon="
+                                    role.scope === 'global'
+                                        ? 'mdi-earth'
+                                        : 'mdi-domain'
+                                "
+                            />
+                        </template>
+                        <v-list-item-title>{{ role.name }}</v-list-item-title>
+                        <v-list-item-subtitle>
+                            {{ role.key }} ·
+                            {{
+                                role.scope === 'global'
+                                    ? 'все отделы'
+                                    : 'отдел пользователя'
+                            }}
+                            · {{ role.permissions.length }} прав
+                        </v-list-item-subtitle>
+                        <template #append>
+                            <v-btn
+                                icon="mdi-pencil-outline"
+                                size="small"
+                                variant="text"
+                                :disabled="role.is_system"
+                                @click="openEditRole(role)"
+                            />
+                            <v-btn
+                                icon="mdi-delete-outline"
+                                size="small"
+                                variant="text"
+                                color="error"
+                                :disabled="role.is_system"
+                                @click="deleteRole(role)"
+                            />
+                        </template>
+                    </v-list-item>
+                </v-list>
             </v-window-item>
 
             <v-window-item value="departments" class="pa-5">
-                <v-select
-                    v-model="selectedDepartmentId"
-                    item-title="title"
-                    item-value="value"
-                    :items="meta?.departments ?? []"
-                    label="Отдел"
-                    variant="outlined"
-                />
-                <div class="access-list">
-                    <v-checkbox
-                        v-for="permission in meta?.permissions ?? []"
-                        :key="permission.key"
-                        :label="permission.name"
-                        :model-value="
-                            selectedDepartmentPermissions.includes(
-                                permission.key,
-                            )
-                        "
-                        hide-details
-                        @update:model-value="
-                            toggleDepartmentPermission(
-                                permission.key,
-                                $event === true,
-                            )
-                        "
-                    />
+                <div class="d-flex justify-space-between align-center mb-4">
+                    <div>
+                        <h3>Отделы</h3>
+                        <p class="table-secondary">
+                            Отделы этой организации и их использование в
+                            системе.
+                        </p>
+                    </div>
+                    <v-btn
+                        color="primary"
+                        prepend-icon="mdi-office-building-plus-outline"
+                        @click="openCreateDepartment"
+                    >
+                        Добавить отдел
+                    </v-btn>
                 </div>
-                <v-btn color="primary" @click="saveDepartmentPermissions">
-                    Сохранить права отдела
-                </v-btn>
+                <v-progress-linear
+                    v-if="isLoading"
+                    color="primary"
+                    indeterminate
+                />
+                <v-table density="comfortable">
+                    <thead>
+                        <tr>
+                            <th>Код</th>
+                            <th>Название</th>
+                            <th>Сотрудники</th>
+                            <th>Документы</th>
+                            <th>Статус</th>
+                            <th aria-label="Действия" />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="department in departments"
+                            :key="department.code"
+                        >
+                            <td>
+                                <code>{{ department.code }}</code>
+                            </td>
+                            <td>
+                                <strong>{{ department.name }}</strong>
+                            </td>
+                            <td>{{ department.users_count }}</td>
+                            <td>{{ department.knowledge_count }}</td>
+                            <td>
+                                <v-chip
+                                    :color="
+                                        department.is_active
+                                            ? 'success'
+                                            : 'default'
+                                    "
+                                    size="small"
+                                    variant="tonal"
+                                >
+                                    {{
+                                        department.is_active
+                                            ? 'Активен'
+                                            : 'Выключен'
+                                    }}
+                                </v-chip>
+                            </td>
+                            <td class="text-right">
+                                <v-btn
+                                    icon="mdi-pencil-outline"
+                                    size="small"
+                                    variant="text"
+                                    @click="openEditDepartment(department)"
+                                />
+                                <v-btn
+                                    color="error"
+                                    icon="mdi-delete-outline"
+                                    size="small"
+                                    variant="text"
+                                    :disabled="
+                                        department.users_count > 0 ||
+                                        department.knowledge_count > 0
+                                    "
+                                    title="Сначала отвяжите сотрудников и документы"
+                                    @click="deleteDepartment(department)"
+                                />
+                            </td>
+                        </tr>
+                    </tbody>
+                </v-table>
             </v-window-item>
         </v-window>
     </v-card>
@@ -422,34 +553,125 @@ onMounted(load);
                     multiple
                     variant="outlined"
                 />
-                <div class="access-list">
-                    <div class="text-subtitle-2 mb-2">
-                        Прямые права пользователя
-                    </div>
-                    <v-checkbox
-                        v-for="permission in meta?.permissions ?? []"
-                        :key="permission.key"
-                        :label="permission.name"
-                        :model-value="form.permissions.includes(permission.key)"
-                        hide-details
-                        @update:model-value="
-                            togglePermission(
-                                form.permissions,
-                                permission.key,
-                                $event === true,
-                            )
-                        "
-                    />
-                </div>
             </v-card-text>
             <v-card-actions class="dialog-actions">
                 <v-btn variant="text" @click="employeeDialogOpen = false"
                     >Отмена</v-btn
                 >
+                <v-btn color="primary" :loading="isSaving" @click="saveEmployee"
+                    >Сохранить</v-btn
+                >
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="roleDialogOpen" max-width="620">
+        <v-card rounded="lg">
+            <v-card-title class="dialog-title">
+                <strong>{{
+                    editingRole ? 'Редактировать роль' : 'Добавить роль'
+                }}</strong>
+                <v-btn
+                    icon="mdi-close"
+                    size="small"
+                    variant="text"
+                    @click="roleDialogOpen = false"
+                />
+            </v-card-title>
+            <v-divider />
+            <v-card-text class="dialog-body">
+                <v-text-field
+                    v-model="roleForm.key"
+                    label="Ключ"
+                    :disabled="!!editingRole"
+                    variant="outlined"
+                />
+                <v-text-field
+                    v-model="roleForm.name"
+                    label="Название"
+                    required
+                    variant="outlined"
+                />
+                <v-select
+                    v-model="roleForm.scope"
+                    item-title="title"
+                    item-value="value"
+                    :items="meta?.role_scopes ?? []"
+                    label="Область доступа"
+                    variant="outlined"
+                />
+                <div class="access-list">
+                    <div class="text-subtitle-2 mb-2">Права роли</div>
+                    <v-checkbox
+                        v-for="permission in meta?.permissions ?? []"
+                        :key="permission.key"
+                        v-model="roleForm.permissions"
+                        :label="permission.name"
+                        :value="permission.key"
+                        hide-details
+                        :disabled="
+                            permission.key === 'employees.manage' ||
+                            permission.key === 'access.manage'
+                        "
+                    />
+                </div>
+            </v-card-text>
+            <v-card-actions class="dialog-actions">
+                <v-btn variant="text" @click="roleDialogOpen = false"
+                    >Отмена</v-btn
+                >
+                <v-btn color="primary" :loading="isSaving" @click="saveRole"
+                    >Сохранить</v-btn
+                >
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="departmentDialogOpen" max-width="520">
+        <v-card rounded="lg">
+            <v-card-title class="dialog-title">
+                <strong>{{
+                    editingDepartment ? 'Редактировать отдел' : 'Добавить отдел'
+                }}</strong>
+                <v-btn
+                    icon="mdi-close"
+                    size="small"
+                    variant="text"
+                    @click="departmentDialogOpen = false"
+                />
+            </v-card-title>
+            <v-divider />
+            <v-card-text class="dialog-body">
+                <v-text-field
+                    v-model="departmentForm.code"
+                    :disabled="!!editingDepartment"
+                    hint="Латинские буквы, цифры, дефис или подчёркивание"
+                    label="Код"
+                    persistent-hint
+                    required
+                    variant="outlined"
+                />
+                <v-text-field
+                    v-model="departmentForm.name"
+                    label="Название"
+                    required
+                    variant="outlined"
+                />
+                <v-switch
+                    v-model="departmentForm.is_active"
+                    color="primary"
+                    hide-details
+                    label="Активный отдел"
+                />
+            </v-card-text>
+            <v-card-actions class="dialog-actions">
+                <v-btn variant="text" @click="departmentDialogOpen = false">
+                    Отмена
+                </v-btn>
                 <v-btn
                     color="primary"
                     :loading="isSaving"
-                    @click="saveEmployee"
+                    @click="saveDepartment"
                 >
                     Сохранить
                 </v-btn>

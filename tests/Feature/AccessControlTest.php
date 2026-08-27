@@ -2,8 +2,8 @@
 
 use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
+use App\Models\Role;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 function createSuperAdmin(): User
 {
@@ -25,7 +25,9 @@ test('only the main administrator can manage employees and access settings', fun
         ->getJson(route('api.admin.employees.index'))
         ->assertOk()
         ->assertJsonPath('meta.roles.0.key', 'employee')
-        ->assertJsonPath('meta.roles.1.key', 'admin');
+        ->assertJsonPath('meta.roles.0.scope', 'department')
+        ->assertJsonPath('meta.roles.1.key', 'admin')
+        ->assertJsonPath('meta.roles.1.scope', 'global');
 });
 
 test('main administrator can create and update an employee with a role', function () {
@@ -38,7 +40,6 @@ test('main administrator can create and update an employee with a role', functio
             'password' => 'password',
             'department_id' => 'hr',
             'roles' => ['employee'],
-            'permissions' => [],
         ])
         ->assertCreated()
         ->assertJsonPath('data.department_id', 'hr')
@@ -46,18 +47,12 @@ test('main administrator can create and update an employee with a role', functio
 
     $employee = User::query()->where('email', 'hr.employee@example.com')->firstOrFail();
 
-    $this->assertDatabaseHas('users', [
-        'id' => $employee->id,
-        'department_id' => 'hr',
-    ]);
-
     $this->actingAs($admin)
         ->patchJson(route('api.admin.employees.update', $employee), [
             'name' => 'Сотрудник HR',
             'email' => 'hr.employee@example.com',
             'department_id' => 'legal',
             'roles' => ['admin'],
-            'permissions' => ['knowledge.read'],
         ])
         ->assertOk()
         ->assertJsonPath('data.name', 'Сотрудник HR')
@@ -65,33 +60,80 @@ test('main administrator can create and update an employee with a role', functio
         ->assertJsonPath('data.roles.0.key', 'admin')
         ->assertJsonPath('data.permissions.0', 'knowledge.read');
 
+    $this->assertDatabaseHas('users', [
+        'id' => $employee->id,
+        'department_id' => 'legal',
+    ]);
+
     expect($response->json('data.id'))->toBe($employee->id);
 });
 
-test('main administrator can configure role and department permissions', function () {
+test('main administrator can create, update and delete a custom role', function () {
     $admin = createSuperAdmin();
 
     $this->actingAs($admin)
-        ->putJson(route('api.admin.roles.permissions.update', 'employee'), [
+        ->postJson(route('api.admin.roles.store'), [
+            'key' => 'legal_reviewer',
+            'name' => 'Проверяющий юрист',
+            'scope' => Role::DepartmentScope,
             'permissions' => ['knowledge.read'],
         ])
-        ->assertOk()
-        ->assertJsonPath('data.key', 'employee')
-        ->assertJsonPath('data.permissions.0', 'knowledge.read');
+        ->assertCreated()
+        ->assertJsonPath('data.scope', Role::DepartmentScope);
+
+    $role = Role::query()->where('key', 'legal_reviewer')->firstOrFail();
 
     $this->actingAs($admin)
-        ->putJson(route('api.admin.departments.permissions.update', 'legal'), [
-            'permissions' => ['knowledge.read'],
+        ->putJson(route('api.admin.roles.update', $role), [
+            'key' => 'legal_reviewer',
+            'name' => 'Старший проверяющий юрист',
+            'scope' => Role::GlobalScope,
+            'permissions' => ['knowledge.read', 'knowledge.update'],
         ])
         ->assertOk()
-        ->assertJsonPath('data.0', 'knowledge.read');
+        ->assertJsonPath('data.name', 'Старший проверяющий юрист')
+        ->assertJsonPath('data.scope', Role::GlobalScope)
+        ->assertJsonFragment(['permissions' => ['knowledge.read', 'knowledge.update']]);
 
-    $this->assertDatabaseHas('department_permissions', [
-        'department_id' => 'legal',
-    ]);
+    $this->actingAs($admin)
+        ->deleteJson(route('api.admin.roles.destroy', $role))
+        ->assertNoContent();
+
+    $this->assertDatabaseMissing('roles', ['key' => 'legal_reviewer']);
 });
 
-test('department read permission exposes documents from that department', function () {
+test('custom roles cannot receive protected administration permissions', function () {
+    $admin = createSuperAdmin();
+
+    $this->actingAs($admin)
+        ->postJson(route('api.admin.roles.store'), [
+            'key' => 'unsafe',
+            'name' => 'Небезопасная роль',
+            'scope' => Role::GlobalScope,
+            'permissions' => ['employees.manage'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('permissions.0');
+});
+
+test('system roles cannot be changed or deleted', function () {
+    $admin = createSuperAdmin();
+    $role = Role::query()->where('key', 'employee')->firstOrFail();
+
+    $this->actingAs($admin)
+        ->putJson(route('api.admin.roles.update', $role), [
+            'name' => 'Изменённая роль',
+            'scope' => Role::GlobalScope,
+            'permissions' => [],
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($admin)
+        ->deleteJson(route('api.admin.roles.destroy', $role))
+        ->assertForbidden();
+});
+
+test('department scoped role exposes documents from the users department', function () {
     $owner = User::factory()->create(['department_id' => 'legal']);
     $viewer = User::factory()->create(['department_id' => 'legal']);
     $otherDepartmentUser = User::factory()->create(['department_id' => 'finance']);
@@ -122,15 +164,23 @@ test('department read permission exposes documents from that department', functi
         'original_name' => 'finance.pdf',
     ]);
 
-    $permissionId = DB::table('permissions')->where('key', 'knowledge.read')->value('id');
-    DB::table('department_permissions')->insert([
-        'department_id' => 'legal',
-        'permission_id' => $permissionId,
-    ]);
-
     $this->actingAs($viewer)
         ->getJson(route('api.knowledge.documents.index'))
         ->assertOk()
         ->assertJsonFragment(['id' => $legalDocument->id])
         ->assertJsonMissing(['id' => $financeDocument->id]);
+});
+
+test('global role can see documents from every department', function () {
+    $viewer = User::factory()->create(['department_id' => 'legal']);
+    $viewer->roles()->sync([Role::query()->where('key', 'admin')->value('id')]);
+
+    $legalDocument = KnowledgeDocument::factory()->indexed()->create();
+    $financeDocument = KnowledgeDocument::factory()->indexed()->create();
+
+    $this->actingAs($viewer)
+        ->getJson(route('api.knowledge.documents.index'))
+        ->assertOk()
+        ->assertJsonFragment(['id' => $legalDocument->id])
+        ->assertJsonFragment(['id' => $financeDocument->id]);
 });

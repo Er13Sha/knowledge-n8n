@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\KnowledgeDocument;
+use App\Models\User;
 use App\Services\Rag\KnowledgeIndexer;
 use App\Services\Rag\KnowledgeSearchEngine;
 use App\Services\Rag\QdrantVectorStore;
@@ -60,10 +61,14 @@ test('internal rag api returns the indexing error details', function () {
 });
 
 test('internal rag api returns search matches', function () {
+    $user = User::factory()->create();
+    $firstDocument = KnowledgeDocument::factory()->for($user)->create();
+    $secondDocument = KnowledgeDocument::factory()->for($user)->create();
+
     $this->mock(KnowledgeSearchEngine::class)
         ->shouldReceive('search')
         ->once()
-        ->with(20, 'ионы', null, 'fulltext', [10, 11], [])
+        ->with($user->id, 'ионы', null, 'fulltext', [$firstDocument->id, $secondDocument->id], [])
         ->andReturn([
             'mode' => 'fulltext',
             'answer' => 'Найдено точных совпадений: 1.',
@@ -73,14 +78,38 @@ test('internal rag api returns search matches', function () {
 
     $this->postJson(route('api.internal.rag.search'), [
         'token' => 'test-rag-token',
-        'user_id' => 20,
+        'user_id' => $user->id,
         'question' => 'ионы',
         'mode' => 'fulltext',
-        'document_ids' => [10, 11],
+        'document_ids' => [$firstDocument->id, $secondDocument->id],
     ])->assertOk()
         ->assertJsonPath('mode', 'fulltext')
         ->assertJsonPath('matches.0.page', 7)
         ->assertJsonPath('matches.0.match_type', 'exact');
+});
+
+test('internal rag api removes inaccessible document ids before searching', function () {
+    $user = User::factory()->create();
+    $ownDocument = KnowledgeDocument::factory()->for($user)->create();
+    $otherDocument = KnowledgeDocument::factory()->create();
+
+    $this->mock(KnowledgeSearchEngine::class)
+        ->shouldReceive('search')
+        ->once()
+        ->with($user->id, 'ионы', null, 'rag', [$ownDocument->id], [])
+        ->andReturn([
+            'mode' => 'rag',
+            'answer' => 'Ответ',
+            'sources' => [],
+            'matches' => [],
+        ]);
+
+    $this->postJson(route('api.internal.rag.search'), [
+        'token' => 'test-rag-token',
+        'user_id' => $user->id,
+        'question' => 'ионы',
+        'document_ids' => [$ownDocument->id, $otherDocument->id],
+    ])->assertOk();
 });
 
 test('internal rag api deletes document vectors', function () {

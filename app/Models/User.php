@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -50,11 +50,7 @@ class User extends Authenticatable
         });
     }
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    /** @return array<string, string> */
     protected function casts(): array
     {
         return [
@@ -70,9 +66,9 @@ class User extends Authenticatable
         return $this->belongsToMany(Role::class);
     }
 
-    /** @return BelongsToMany<Permission, $this> */
-    public function directPermissions(): BelongsToMany
+    /** @return BelongsTo<Department, $this> */
+    public function department(): BelongsTo
     {
-        return $this->belongsToMany(Permission::class, 'user_permissions');
+        return $this->belongsTo(Department::class, 'department_id', 'code');
     }
 }

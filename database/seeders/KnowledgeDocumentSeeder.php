@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Enums\KnowledgeDocumentStatus;
+use App\Models\Department;
 use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
 use App\Models\User;
@@ -26,7 +27,7 @@ class KnowledgeDocumentSeeder extends Seeder
         );
 
         $pdf = $this->pdfContent();
-        $departments = Knowledge::DepartmentOptions;
+        $departments = Department::options();
         $documentTypes = Knowledge::DocumentTypeOptions;
 
         DB::transaction(function () use ($user, $pdf, $departments, $documentTypes): void {

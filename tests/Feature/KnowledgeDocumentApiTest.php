@@ -3,6 +3,8 @@
 use App\Enums\KnowledgeDocumentStatus;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
+use App\Models\Department;
+use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
 use App\Models\User;
 use App\Services\Rag\KnowledgeIndexer;
@@ -42,11 +44,68 @@ test('authenticated user can list only own knowledge documents', function () {
         ->assertJsonMissing(['original_name' => 'other.pdf']);
 });
 
+test('knowledge metadata exposes departments available for filtering', function () {
+    $user = User::factory()->create(['department_id' => 'legal']);
+
+    $this->actingAs($user)
+        ->getJson(route('api.knowledge.documents.index'))
+        ->assertOk()
+        ->assertJsonCount(1, 'meta.filters.departments')
+        ->assertJsonPath('meta.filters.departments.0.value', 'legal')
+        ->assertJsonPath('meta.filters.departments.0.title', 'Юридический отдел');
+});
+
+test('knowledge metadata reads department names from the database', function () {
+    Department::query()->where('code', 'legal')->update(['name' => 'Юридический департамент']);
+    $user = User::factory()->create(['department_id' => 'legal']);
+
+    $this->actingAs($user)
+        ->getJson(route('api.knowledge.documents.index'))
+        ->assertOk()
+        ->assertJsonPath('meta.filters.departments.0.title', 'Юридический департамент');
+});
+
+test('authenticated user can filter documents and search by title', function () {
+    $user = User::factory()->create(['department_id' => 'legal']);
+
+    $matchingKnowledge = Knowledge::query()->create([
+        'user_id' => $user->id,
+        'department_id' => 'legal',
+        'title' => 'Information security policy',
+        'doc_type' => 'policy',
+        'status' => 'indexed',
+        'approved_at' => '2026-08-20',
+    ]);
+    $matchingDocument = KnowledgeDocument::factory()->for($user)->indexed()->create([
+        'knowledge_id' => $matchingKnowledge->id,
+        'original_name' => 'security-policy.pdf',
+    ]);
+
+    $otherKnowledge = Knowledge::query()->create([
+        'user_id' => $user->id,
+        'department_id' => 'legal',
+        'title' => 'Information security draft',
+        'doc_type' => 'instruction',
+        'status' => 'indexed',
+        'approved_at' => '2026-08-20',
+    ]);
+    $otherDocument = KnowledgeDocument::factory()->for($user)->indexed()->create([
+        'knowledge_id' => $otherKnowledge->id,
+        'original_name' => 'security-draft.pdf',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('api.knowledge.documents.index').'?search=security&department_id=legal&doc_type=policy&status=indexed')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $matchingDocument->id)
+        ->assertJsonMissing(['id' => $otherDocument->id]);
+});
+
 test('authenticated user can upload pdf document for indexing', function () {
     Queue::fake();
     Storage::fake('local');
 
-    $user = User::factory()->create();
+    $user = User::factory()->create(['department_id' => 'legal']);
     $file = UploadedFile::fake()->create('policy.pdf', 128, 'application/pdf');
 
     $this->actingAs($user)
@@ -61,6 +120,7 @@ test('authenticated user can upload pdf document for indexing', function () {
         ->assertJsonPath('data.original_name', 'policy.pdf')
         ->assertJsonPath('data.status', KnowledgeDocumentStatus::Pending->value)
         ->assertJsonPath('data.status_label', KnowledgeDocumentStatus::Pending->label())
+        ->assertJsonPath('data.index_progress', 0)
         ->assertJsonPath('data.is_searchable', false)
         ->assertJsonPath('data.title', 'Политика информационной безопасности')
         ->assertJsonPath('data.department_id', 'legal')
@@ -122,6 +182,15 @@ test('authenticated user cannot view another user pdf document', function () {
 
     $this->actingAs($user)
         ->get(route('api.knowledge.documents.show', $document))
+        ->assertNotFound();
+});
+
+test('authenticated user cannot delete another user pdf document', function () {
+    $user = User::factory()->create();
+    $document = KnowledgeDocument::factory()->create();
+
+    $this->actingAs($user)
+        ->deleteJson(route('api.knowledge.documents.destroy', $document))
         ->assertNotFound();
 });
 
@@ -251,14 +320,33 @@ test('index job processes the document directly through the rag indexer', functi
     $this->mock(KnowledgeIndexer::class)
         ->shouldReceive('index')
         ->once()
-        ->withArgs(fn (KnowledgeDocument $indexedDocument): bool => $indexedDocument->is($document))
+        ->withArgs(function (KnowledgeDocument $indexedDocument, ?Closure $onProgress) use ($document): bool {
+            $onProgress?->__invoke(55);
+
+            return $indexedDocument->is($document);
+        })
         ->andReturn(['ok' => true, 'pages' => 3, 'chunks' => 8]);
 
     (new IndexKnowledgeDocument($document->id))->handle(app(KnowledgeIndexer::class));
 
     expect($document->fresh())
         ->status->toBe(KnowledgeDocumentStatus::Indexed)
+        ->index_progress->toBe(100)
         ->indexed_at->not->toBeNull();
+});
+
+test('index job skips an already indexed document after message redelivery', function () {
+    $document = KnowledgeDocument::factory()->indexed()->create();
+
+    $this->mock(KnowledgeIndexer::class)
+        ->shouldReceive('index')
+        ->never();
+
+    (new IndexKnowledgeDocument($document->id))->handle(app(KnowledgeIndexer::class));
+
+    expect($document->fresh())
+        ->status->toBe(KnowledgeDocumentStatus::Indexed)
+        ->index_progress->toBe(100);
 });
 
 test('index job records a failed rag exception', function () {
@@ -273,6 +361,13 @@ test('index job records a failed rag exception', function () {
 
     expect(fn () => (new IndexKnowledgeDocument($document->id))->handle(app(KnowledgeIndexer::class)))
         ->toThrow(RuntimeException::class, 'Для сканированных PDF требуется OCR.');
+
+    expect($document->fresh())
+        ->status->toBe(KnowledgeDocumentStatus::Processing)
+        ->index_progress->toBe(5)
+        ->error_message->toBeNull();
+
+    (new IndexKnowledgeDocument($document->id))->failed(new RuntimeException('Для сканированных PDF требуется OCR.'));
 
     expect($document->fresh())
         ->status->toBe(KnowledgeDocumentStatus::Failed)
@@ -315,6 +410,7 @@ test('authenticated user can retry failed document indexing', function () {
         ->postJson(route('api.knowledge.documents.retry-indexing', $document))
         ->assertOk()
         ->assertJsonPath('data.status', KnowledgeDocumentStatus::Pending->value)
+        ->assertJsonPath('data.index_progress', 0)
         ->assertJsonPath('data.error_message', null);
 
     Queue::assertPushed(IndexKnowledgeDocument::class);

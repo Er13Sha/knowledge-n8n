@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Knowledge;
+use App\Models\Department;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class EmployeeController extends Controller
 {
@@ -19,10 +20,10 @@ class EmployeeController extends Controller
     {
         return response()->json([
             'data' => User::query()
-                ->with(['roles', 'directPermissions'])
+                ->with('roles')
                 ->orderBy('name')
                 ->get()
-                ->map(fn (User $user): array => $this->userData($user))
+                ->map(fn (User $user): array => $this->userData($user, $accessManager))
                 ->values(),
             'meta' => [
                 'roles' => Role::query()
@@ -32,13 +33,16 @@ class EmployeeController extends Controller
                     ->map(fn (Role $role): array => $this->roleData($role))
                     ->values(),
                 'permissions' => $accessManager->permissions(),
-                'departments' => Knowledge::DepartmentOptions,
-                'department_permissions' => $this->departmentPermissions(),
+                'departments' => Department::options(),
+                'role_scopes' => [
+                    ['value' => Role::GlobalScope, 'title' => 'Все отделы'],
+                    ['value' => Role::DepartmentScope, 'title' => 'Отдел пользователя'],
+                ],
             ],
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, AccessManager $accessManager): JsonResponse
     {
         $validated = $this->validateEmployee($request, true);
         $user = DB::transaction(function () use ($validated): User {
@@ -49,15 +53,15 @@ class EmployeeController extends Controller
                 'department_id' => $validated['department_id'] ?? null,
             ]);
 
-            $this->syncAccess($user, $validated);
+            $this->syncAccess($user, $validated['roles']);
 
-            return $user->fresh(['roles', 'directPermissions']);
+            return $user->fresh('roles');
         });
 
-        return response()->json(['data' => $this->userData($user)], 201);
+        return response()->json(['data' => $this->userData($user, $accessManager)], Response::HTTP_CREATED);
     }
 
-    public function update(Request $request, User $user): JsonResponse
+    public function update(Request $request, User $user, AccessManager $accessManager): JsonResponse
     {
         $validated = $this->validateEmployee($request, false, $user);
 
@@ -73,51 +77,52 @@ class EmployeeController extends Controller
             }
 
             $user->update($attributes);
-            $this->syncAccess($user, $validated);
+            $this->syncAccess($user, $validated['roles']);
         });
 
-        return response()->json(['data' => $this->userData($user->fresh(['roles', 'directPermissions']))]);
+        return response()->json(['data' => $this->userData($user->fresh('roles'), $accessManager)]);
+    }
+
+    public function storeRole(Request $request): JsonResponse
+    {
+        $validated = $this->validateRole($request, true);
+        $role = DB::transaction(function () use ($validated): Role {
+            $role = Role::query()->create([
+                'key' => $validated['key'],
+                'name' => $validated['name'],
+                'scope' => $validated['scope'],
+                'is_system' => false,
+            ]);
+            $role->permissions()->sync($this->permissionIds($validated['permissions'] ?? []));
+
+            return $role->fresh('permissions');
+        });
+
+        return response()->json(['data' => $this->roleData($role)], Response::HTTP_CREATED);
     }
 
     public function updateRole(Request $request, Role $role): JsonResponse
     {
-        $permissionIds = $this->permissionIds($request->validate([
-            'permissions' => ['array'],
-            'permissions.*' => ['string', 'exists:permissions,key'],
-        ])['permissions'] ?? []);
+        abort_if($role->is_system, Response::HTTP_FORBIDDEN);
 
-        $role->permissions()->sync($permissionIds);
+        $validated = $this->validateRole($request, false, $role);
+        $role->update([
+            'name' => $validated['name'],
+            'scope' => $validated['scope'],
+        ]);
+        $role->permissions()->sync($this->permissionIds($validated['permissions'] ?? []));
 
         return response()->json(['data' => $this->roleData($role->fresh('permissions'))]);
     }
 
-    public function updateDepartment(Request $request, string $department): JsonResponse
+    public function destroyRole(Role $role): JsonResponse
     {
-        abort_unless(
-            in_array($department, array_column(Knowledge::DepartmentOptions, 'value'), true),
-            404,
-        );
+        abort_if($role->is_system, Response::HTTP_FORBIDDEN);
+        abort_if($role->users()->exists(), Response::HTTP_CONFLICT, 'Нельзя удалить роль, назначенную сотрудникам.');
 
-        $permissionIds = $this->permissionIds($request->validate([
-            'permissions' => ['array'],
-            'permissions.*' => ['string', 'exists:permissions,key'],
-        ])['permissions'] ?? []);
+        $role->delete();
 
-        DB::transaction(function () use ($department, $permissionIds): void {
-            DB::table('department_permissions')->where('department_id', $department)->delete();
-
-            if ($permissionIds !== []) {
-                DB::table('department_permissions')->insert(array_map(
-                    fn (int $permissionId): array => [
-                        'department_id' => $department,
-                        'permission_id' => $permissionId,
-                    ],
-                    $permissionIds,
-                ));
-            }
-        });
-
-        return response()->json(['data' => $this->departmentPermissions()[$department] ?? []]);
+        return response()->json(status: Response::HTTP_NO_CONTENT);
     }
 
     /** @return array<string, mixed> */
@@ -136,23 +141,39 @@ class EmployeeController extends Controller
             'department_id' => [
                 'nullable',
                 'string',
-                Rule::in(array_column(Knowledge::DepartmentOptions, 'value')),
+                Rule::exists('departments', 'code')->where('is_active', true),
             ],
-            'roles' => ['array'],
+            'roles' => ['required', 'array', 'min:1'],
             'roles.*' => ['string', 'exists:roles,key'],
-            'permissions' => ['array'],
-            'permissions.*' => ['string', 'exists:permissions,key'],
         ]);
     }
 
-    /** @param array<string, mixed> $validated */
-    private function syncAccess(User $user, array $validated): void
+    /** @param list<string> $roleKeys */
+    private function syncAccess(User $user, array $roleKeys): void
     {
-        $roleIds = Role::query()->whereIn('key', $validated['roles'] ?? [])->pluck('id');
-        $permissionIds = $this->permissionIds($validated['permissions'] ?? []);
-
+        $roleIds = Role::query()->whereIn('key', $roleKeys)->pluck('id');
         $user->roles()->sync($roleIds);
-        $user->directPermissions()->sync($permissionIds);
+    }
+
+    /** @return array<string, mixed> */
+    private function validateRole(Request $request, bool $creating, ?Role $role = null): array
+    {
+        $keyRule = Rule::unique('roles', 'key');
+
+        if ($role !== null) {
+            $keyRule = $keyRule->ignore($role->id);
+        }
+
+        return $request->validate([
+            'key' => [$creating ? 'required' : 'sometimes', 'string', 'max:50', 'regex:/^[a-z0-9][a-z0-9._-]*$/', $keyRule],
+            'name' => ['required', 'string', 'max:100'],
+            'scope' => ['required', Rule::in([Role::GlobalScope, Role::DepartmentScope])],
+            'permissions' => ['array'],
+            'permissions.*' => ['string', 'exists:permissions,key', Rule::notIn([
+                AccessManager::EmployeesManage,
+                AccessManager::AccessManage,
+            ])],
+        ]);
     }
 
     /** @param list<string> $keys */
@@ -162,7 +183,7 @@ class EmployeeController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function userData(User $user): array
+    private function userData(User $user, AccessManager $accessManager): array
     {
         return [
             'id' => $user->id,
@@ -173,8 +194,9 @@ class EmployeeController extends Controller
             'roles' => $user->roles->map(fn (Role $role): array => [
                 'key' => $role->key,
                 'name' => $role->name,
+                'scope' => $role->scope,
             ])->values(),
-            'permissions' => $user->directPermissions->pluck('key')->values(),
+            'permissions' => $accessManager->permissionKeys($user),
         ];
     }
 
@@ -184,18 +206,9 @@ class EmployeeController extends Controller
         return [
             'key' => $role->key,
             'name' => $role->name,
+            'scope' => $role->scope,
+            'is_system' => $role->is_system,
             'permissions' => $role->permissions->pluck('key')->values(),
         ];
-    }
-
-    /** @return array<string, list<string>> */
-    private function departmentPermissions(): array
-    {
-        return DB::table('department_permissions')
-            ->join('permissions', 'permissions.id', '=', 'department_permissions.permission_id')
-            ->get(['department_id', 'permissions.key'])
-            ->groupBy('department_id')
-            ->map(fn ($permissions): array => $permissions->pluck('key')->values()->all())
-            ->all();
     }
 }

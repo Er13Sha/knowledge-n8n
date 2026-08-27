@@ -17,6 +17,7 @@ export type KnowledgeDocument = {
     human_size: string;
     status: KnowledgeDocumentStatus;
     status_label: string;
+    index_progress: number;
     is_searchable: boolean;
     indexed_at: string | null;
     error_message: string | null;
@@ -30,6 +31,9 @@ export type KnowledgeMeta = {
     form: {
         departments: SelectOption[];
         document_types: SelectOption[];
+    };
+    filters: {
+        departments: SelectOption[];
     };
     services: {
         n8n_index_configured: boolean;

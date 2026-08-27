@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Internal\RagController;
@@ -39,11 +40,16 @@ Route::middleware(['web', 'auth'])->prefix('knowledge')->name('api.knowledge.')-
 });
 
 Route::middleware(['web', 'auth', EnsureSuperAdmin::class])->prefix('admin')->name('api.admin.')->group(function () {
+    Route::get('departments', [DepartmentController::class, 'index'])->name('departments.index');
+    Route::post('departments', [DepartmentController::class, 'store'])->name('departments.store');
+    Route::patch('departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
+    Route::delete('departments/{department}', [DepartmentController::class, 'destroy'])->name('departments.destroy');
     Route::get('employees', [EmployeeController::class, 'index'])->name('employees.index');
     Route::post('employees', [EmployeeController::class, 'store'])->name('employees.store');
     Route::patch('employees/{user}', [EmployeeController::class, 'update'])->name('employees.update');
-    Route::put('roles/{role}/permissions', [EmployeeController::class, 'updateRole'])->name('roles.permissions.update');
-    Route::put('departments/{department}/permissions', [EmployeeController::class, 'updateDepartment'])->name('departments.permissions.update');
+    Route::post('roles', [EmployeeController::class, 'storeRole'])->name('roles.store');
+    Route::put('roles/{role}', [EmployeeController::class, 'updateRole'])->name('roles.update');
+    Route::delete('roles/{role}', [EmployeeController::class, 'destroyRole'])->name('roles.destroy');
 });
 
 Route::middleware(['web', 'auth'])->prefix('settings')->name('api.settings.')->group(function () {

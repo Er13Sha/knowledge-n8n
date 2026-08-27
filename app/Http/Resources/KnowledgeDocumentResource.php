@@ -32,6 +32,7 @@ class KnowledgeDocumentResource extends JsonResource
             'human_size' => $this->humanSize($doc->size),
             'status' => $doc->status->value,
             'status_label' => $doc->status->label(),
+            'index_progress' => $doc->index_progress,
             'is_searchable' => $doc->status->isSearchable(),
             'indexed_at' => $doc->indexed_at?->toISOString(),
             'error_message' => $doc->error_message,

@@ -10,7 +10,11 @@ class Role extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['key', 'name', 'is_system'];
+    public const string GlobalScope = 'global';
+
+    public const string DepartmentScope = 'department';
+
+    protected $fillable = ['key', 'name', 'is_system', 'scope'];
 
     protected function casts(): array
     {

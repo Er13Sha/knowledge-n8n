@@ -12,9 +12,9 @@ class AccessControlSeeder extends Seeder
         $now = now();
 
         DB::table('roles')->upsert([
-            ['key' => 'employee', 'name' => 'Сотрудник', 'is_system' => true, 'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'admin', 'name' => 'Админ', 'is_system' => true, 'created_at' => $now, 'updated_at' => $now],
-        ], ['key'], ['name', 'is_system', 'updated_at']);
+            ['key' => 'employee', 'name' => 'Сотрудник', 'is_system' => true, 'scope' => 'department', 'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'admin', 'name' => 'Админ', 'is_system' => true, 'scope' => 'global', 'created_at' => $now, 'updated_at' => $now],
+        ], ['key'], ['name', 'is_system', 'scope', 'updated_at']);
 
         $permissions = [
             ['key' => 'knowledge.read', 'name' => 'Чтение базы знаний'],

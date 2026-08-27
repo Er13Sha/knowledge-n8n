@@ -19,7 +19,7 @@ class UpdateKnowledgeDocumentRequest extends FormRequest
             'department_id' => [
                 'required',
                 'string',
-                Rule::in(array_column(Knowledge::DepartmentOptions, 'value')),
+                Rule::exists('departments', 'code')->where('is_active', true),
             ],
             'title' => ['required', 'string', 'max:255'],
             'doc_type' => [
