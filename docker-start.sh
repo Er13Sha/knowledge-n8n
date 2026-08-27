@@ -133,16 +133,16 @@ if [[ -n "${DB_PASSWORD:-}" ]]; then
 fi
 
 if [[ "$down" == true ]]; then
-    docker compose down
+    docker compose down --remove-orphans
     exit 0
 fi
 
 if [[ "$restart" == true ]]; then
-    docker compose down
+    docker compose down --remove-orphans
 fi
 
 if [[ "$pull" == true ]]; then
-    docker compose pull postgres qdrant ollama ollama-init
+    docker compose pull postgres rabbitmq qdrant ollama
 fi
 
 if [[ "$build" == true ]]; then
@@ -154,26 +154,32 @@ if [[ "$build" == true ]]; then
 fi
 
 if [[ "$migrate" == true ]]; then
-    APP_KEY="$APP_KEY" RUN_MIGRATIONS=true docker compose up -d
+    APP_KEY="$APP_KEY" RUN_MIGRATIONS=true docker compose up -d --remove-orphans
 else
-    APP_KEY="$APP_KEY" docker compose up -d
+    APP_KEY="$APP_KEY" docker compose up -d --remove-orphans
 fi
 
-echo "Waiting for Laravel and n8n healthchecks..."
+echo "Waiting for Laravel, Ollama, document processor, RabbitMQ, and n8n healthchecks..."
 healthy=false
 for attempt in {1..450}; do
     app_status="$(docker compose ps app --format json 2>/dev/null || true)"
     n8n_status="$(docker compose ps n8n --format json 2>/dev/null || true)"
+    rabbitmq_status="$(docker compose ps rabbitmq --format json 2>/dev/null || true)"
+    document_processor_status="$(docker compose ps document-processor --format json 2>/dev/null || true)"
+    ollama_status="$(docker compose ps ollama --format json 2>/dev/null || true)"
 
     if echo "$app_status" | grep -q '"Health":"healthy"' \
-        && echo "$n8n_status" | grep -q '"Health":"healthy"'; then
+        && echo "$n8n_status" | grep -q '"Health":"healthy"' \
+        && echo "$rabbitmq_status" | grep -q '"Health":"healthy"' \
+        && echo "$document_processor_status" | grep -q '"Health":"healthy"' \
+        && echo "$ollama_status" | grep -q '"Health":"healthy"'; then
         healthy=true
         break
     fi
 
-    if echo "$app_status$n8n_status" | grep -q '"State":"exited"'; then
+    if echo "$app_status$n8n_status$rabbitmq_status$document_processor_status$ollama_status" | grep -q '"State":"exited"'; then
         echo "A required container exited during startup." >&2
-        docker compose logs --tail=120 app n8n ollama-init qdrant >&2
+        docker compose logs --tail=120 app queue document-processor rabbitmq n8n ollama qdrant >&2
         exit 1
     fi
 
@@ -182,7 +188,7 @@ done
 
 if [[ "$healthy" != true ]]; then
     echo "The application stack did not become healthy within 900 seconds." >&2
-    docker compose logs --tail=120 app queue n8n ollama ollama-init qdrant >&2
+    docker compose logs --tail=120 app queue document-processor rabbitmq n8n ollama qdrant >&2
     exit 1
 fi
 
@@ -190,8 +196,10 @@ docker compose ps
 
 echo "Application: http://localhost:${HTTP_PORT:-8080}"
 echo "n8n editor: http://localhost:${N8N_PORT:-5678}"
+echo "RabbitMQ management: http://localhost:${RABBITMQ_MANAGEMENT_PORT:-15672}"
+echo "Document processor: http://localhost:${DOCUMENT_PROCESSOR_PORT:-8001}/health"
 echo "Qdrant dashboard: http://localhost:${QDRANT_PORT:-6333}/dashboard"
 
 if [[ "$logs" == true ]]; then
-    docker compose logs -f app
+    docker compose logs -f app queue document-processor rabbitmq ollama
 fi

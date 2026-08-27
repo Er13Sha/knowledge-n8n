@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Knowledge;
 use App\Enums\KnowledgeDocumentStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\SearchKnowledgeDocumentsRequest;
-use App\Models\KnowledgeDocument;
+use App\Services\Access\AccessManager;
 use App\Services\KnowledgeSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -16,6 +16,9 @@ class KnowledgeSearchController extends Controller
     public function __invoke(SearchKnowledgeDocumentsRequest $request, KnowledgeSearchService $searchService): JsonResponse
     {
         $document = $request->knowledgeDocument();
+        $visibleIndexedDocuments = app(AccessManager::class)
+            ->visibleDocuments($request->user())
+            ->where('status', KnowledgeDocumentStatus::Indexed);
 
         if ($document !== null && $document->status !== KnowledgeDocumentStatus::Indexed) {
             throw ValidationException::withMessages([
@@ -23,10 +26,7 @@ class KnowledgeSearchController extends Controller
             ]);
         }
 
-        if ($document === null && ! KnowledgeDocument::query()
-            ->whereBelongsTo($request->user())
-            ->where('status', KnowledgeDocumentStatus::Indexed)
-            ->exists()) {
+        if ($document === null && ! $visibleIndexedDocuments->exists()) {
             throw ValidationException::withMessages([
                 'document_id' => 'В базе знаний нет проиндексированных документов.',
             ]);
@@ -37,6 +37,11 @@ class KnowledgeSearchController extends Controller
                 $request->user()->id,
                 $request->question(),
                 $document?->id,
+                $request->mode(),
+                $document !== null
+                    ? [$document->id]
+                    : $visibleIndexedDocuments->pluck('id')->map(fn (int $id): int => $id)->all(),
+                $request->history(),
             );
         } catch (RuntimeException $exception) {
             return response()->json([

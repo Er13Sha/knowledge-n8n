@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Knowledge;
 
 use App\Models\Knowledge;
+use App\Services\Access\AccessManager;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
@@ -13,7 +14,8 @@ class StoreKnowledgeDocumentRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        return $this->user() !== null
+            && app(AccessManager::class)->allows($this->user(), AccessManager::KnowledgeCreate);
     }
 
     /**

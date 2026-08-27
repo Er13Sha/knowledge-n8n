@@ -41,6 +41,9 @@ class RagController extends Controller
             $request->integer('user_id'),
             $request->string('question')->toString(),
             $request->filled('document_id') ? $request->integer('document_id') : null,
+            $request->string('mode', 'rag')->toString(),
+            array_map('intval', $request->input('document_ids', [])),
+            $request->input('history', []),
         ));
     }
 

@@ -63,8 +63,9 @@ test('internal rag api returns search matches', function () {
     $this->mock(KnowledgeSearchEngine::class)
         ->shouldReceive('search')
         ->once()
-        ->with(20, 'ионы', null)
+        ->with(20, 'ионы', null, 'fulltext', [10, 11], [])
         ->andReturn([
+            'mode' => 'fulltext',
             'answer' => 'Найдено точных совпадений: 1.',
             'sources' => [],
             'matches' => [['page' => 7, 'match_type' => 'exact']],
@@ -74,7 +75,10 @@ test('internal rag api returns search matches', function () {
         'token' => 'test-rag-token',
         'user_id' => 20,
         'question' => 'ионы',
+        'mode' => 'fulltext',
+        'document_ids' => [10, 11],
     ])->assertOk()
+        ->assertJsonPath('mode', 'fulltext')
         ->assertJsonPath('matches.0.page', 7)
         ->assertJsonPath('matches.0.match_type', 'exact');
 });

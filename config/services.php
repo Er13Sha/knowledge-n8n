@@ -41,7 +41,33 @@ return [
         'embedding_model' => env('OLLAMA_EMBED_MODEL', 'nomic-embed-text'),
         'timeout' => env('OLLAMA_TIMEOUT', 600),
     ],
-    'qdrant' => [        'url' => env('QDRANT_URL', 'http://localhost:6333'),        'api_key' => env('QDRANT_API_KEY'),        'collection' => env('QDRANT_COLLECTION', 'knowledge_documents'),    ],    'rag' => [        'internal_token' => env('RAG_INTERNAL_TOKEN'),        'chunk_size' => env('RAG_CHUNK_SIZE', 1400),        'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 200),        'embedding_batch_size' => env('RAG_EMBEDDING_BATCH_SIZE', 16),        'ocr_languages' => env('RAG_OCR_LANGUAGES', 'rus+eng'),        'ocr_dpi' => env('RAG_OCR_DPI', 200),        'ocr_page_timeout' => env('RAG_OCR_PAGE_TIMEOUT', 120),        'top_k' => env('RAG_TOP_K', 6),        'lexical_result_limit' => env('RAG_LEXICAL_RESULT_LIMIT', 50),        'lexical_scroll_batch_size' => env('RAG_LEXICAL_SCROLL_BATCH_SIZE', 256),        'score_threshold' => env('RAG_SCORE_THRESHOLD', 0.25),        'request_timeout' => env('RAG_REQUEST_TIMEOUT', 600),    ],
+
+    'document_processor' => [
+        'url' => env('DOCUMENT_PROCESSOR_URL', 'http://localhost:8001'),
+        'token' => env('DOCUMENT_PROCESSOR_TOKEN'),
+        'timeout' => env('DOCUMENT_PROCESSOR_TIMEOUT', 600),
+    ],
+
+    'qdrant' => [
+        'url' => env('QDRANT_URL', 'http://localhost:6333'),
+        'api_key' => env('QDRANT_API_KEY'),
+        'collection' => env('QDRANT_COLLECTION', 'knowledge_documents'),
+    ],
+
+    'rag' => [
+        'internal_token' => env('RAG_INTERNAL_TOKEN'),
+        'chunk_size' => env('RAG_CHUNK_SIZE', 1400),
+        'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 200),
+        'embedding_batch_size' => env('RAG_EMBEDDING_BATCH_SIZE', 16),
+        'ocr_languages' => env('RAG_OCR_LANGUAGES', 'rus+eng'),
+        'ocr_dpi' => env('RAG_OCR_DPI', 200),
+        'top_k' => env('RAG_TOP_K', 6),
+        'lexical_result_limit' => env('RAG_LEXICAL_RESULT_LIMIT', 50),
+        'lexical_candidate_limit' => env('RAG_LEXICAL_CANDIDATE_LIMIT', 1000),
+        'score_threshold' => env('RAG_SCORE_THRESHOLD', 0.25),
+        'context_max_chars' => env('RAG_CONTEXT_MAX_CHARS', 16000),
+        'request_timeout' => env('RAG_REQUEST_TIMEOUT', 600),
+    ],
 
     'n8n' => [
         'index_webhook_url' => env('N8N_INDEX_WEBHOOK_URL'),

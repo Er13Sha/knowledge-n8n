@@ -4,8 +4,8 @@ use App\Enums\KnowledgeDocumentStatus;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
 use App\Models\KnowledgeDocument;
-use App\Services\Rag\KnowledgeIndexer;
 use App\Models\User;
+use App\Services\Rag\KnowledgeIndexer;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -131,6 +131,7 @@ test('authenticated user can search indexed document', function () {
 
     Http::fake([
         'https://n8n.test/webhook/search' => Http::response([
+            'mode' => 'rag',
             'answer' => 'Найденный ответ',
             'sources' => [
                 ['page' => 3],
@@ -155,8 +156,14 @@ test('authenticated user can search indexed document', function () {
         ->postJson(route('api.knowledge.search'), [
             'document_id' => $document->id,
             'question' => 'Что указано в документе?',
+            'mode' => 'rag',
+            'history' => [
+                ['role' => 'user', 'content' => 'Предыдущий вопрос'],
+                ['role' => 'assistant', 'content' => 'Предыдущий ответ'],
+            ],
         ])
         ->assertOk()
+        ->assertJsonPath('data.mode', 'rag')
         ->assertJsonPath('data.answer', 'Найденный ответ')
         ->assertJsonPath('data.sources.0.page', 3)
         ->assertJsonPath('data.matches.0.document_name', 'policy.pdf')
@@ -164,7 +171,10 @@ test('authenticated user can search indexed document', function () {
         ->assertJsonPath('data.matches.0.match_type', 'exact');
 
     Http::assertSent(fn ($request) => $request['document_id'] === $document->id
-        && $request['user_id'] === $user->id);
+        && $request['user_id'] === $user->id
+        && $request['mode'] === 'rag'
+        && $request['document_ids'] === [$document->id]
+        && $request['history'][0]['content'] === 'Предыдущий вопрос');
 });
 
 test('authenticated user can search all indexed documents', function () {
@@ -189,13 +199,16 @@ test('authenticated user can search all indexed documents', function () {
     $this->actingAs($user)
         ->postJson(route('api.knowledge.search'), [
             'question' => 'Что указано во всех документах?',
+            'mode' => 'fulltext',
         ])
         ->assertOk()
         ->assertJsonPath('data.answer', 'Ответ по всей базе')
         ->assertJsonPath('data.sources.0.document_name', 'policy.pdf');
 
     Http::assertSent(fn ($request) => $request['document_id'] === null
-        && $request['user_id'] === $user->id);
+        && $request['user_id'] === $user->id
+        && $request['mode'] === 'fulltext'
+        && count($request['document_ids']) === 2);
 });
 
 test('searching all documents requires at least one indexed document', function () {

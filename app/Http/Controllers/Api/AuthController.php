@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\Access\AccessManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,10 +12,16 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function user(Request $request): JsonResponse
+    public function user(Request $request, AccessManager $accessManager): JsonResponse
     {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
         return response()->json([
-            'data' => $request->user(),
+            'data' => array_merge($user->toArray(), [
+                'roles' => $user->roles()->get(['key', 'name']),
+                'permissions' => $accessManager->permissionKeys($user),
+            ]),
         ]);
     }
 
@@ -36,7 +44,7 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return $this->user($request);
+        return $this->user($request, app(AccessManager::class));
     }
 
     public function logout(Request $request): JsonResponse

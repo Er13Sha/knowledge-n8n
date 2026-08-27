@@ -8,6 +8,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      document-processor:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
     environment:
       APP_NAME: ${DOCKER_APP_NAME:-Knowledge System}
       APP_ENV: ${DOCKER_APP_ENV:-production}
@@ -27,8 +33,19 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-change-me}
       DB_SSLMODE: disable
       CACHE_STORE: ${CACHE_STORE:-database}
-      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      QUEUE_CONNECTION: rabbitmq
       DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-960}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-knowledge_system}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-knowledge-system-rabbitmq-secret}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-knowledge-documents}
+      RABBITMQ_HEARTBEAT: ${RABBITMQ_HEARTBEAT:-30}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-5}
+      RABBITMQ_READ_TIMEOUT: ${RABBITMQ_READ_TIMEOUT:-65}
+      RABBITMQ_WRITE_TIMEOUT: ${RABBITMQ_WRITE_TIMEOUT:-10}
+      RABBITMQ_CHANNEL_RPC_TIMEOUT: ${RABBITMQ_CHANNEL_RPC_TIMEOUT:-10}
       SESSION_DRIVER: ${SESSION_DRIVER:-database}
       OLLAMA_URL: ${DOCKER_OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
@@ -38,6 +55,9 @@ services:
       N8N_DELETE_WEBHOOK_URL: ${DOCKER_N8N_DELETE_WEBHOOK_URL:-http://n8n:5678/webhook/knowledge-delete}
       N8N_TIMEOUT: ${N8N_TIMEOUT:-600}
       RAG_INTERNAL_TOKEN: ${RAG_INTERNAL_TOKEN:-change-me-rag-token}
+      DOCUMENT_PROCESSOR_URL: ${DOCKER_DOCUMENT_PROCESSOR_URL:-http://document-processor:8000}
+      DOCUMENT_PROCESSOR_TOKEN: ${DOCUMENT_PROCESSOR_TOKEN:-change-me-document-processor-token}
+      DOCUMENT_PROCESSOR_TIMEOUT: ${DOCUMENT_PROCESSOR_TIMEOUT:-600}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:-knowledge-system-qdrant-key}
@@ -50,7 +70,7 @@ services:
       RAG_OCR_PAGE_TIMEOUT: ${RAG_OCR_PAGE_TIMEOUT:-120}
       RAG_TOP_K: ${RAG_TOP_K:-6}
       RAG_LEXICAL_RESULT_LIMIT: ${RAG_LEXICAL_RESULT_LIMIT:-50}
-      RAG_LEXICAL_SCROLL_BATCH_SIZE: ${RAG_LEXICAL_SCROLL_BATCH_SIZE:-256}
+      RAG_LEXICAL_CANDIDATE_LIMIT: ${RAG_LEXICAL_CANDIDATE_LIMIT:-1000}
       RAG_SCORE_THRESHOLD: ${RAG_SCORE_THRESHOLD:-0.25}
       RAG_REQUEST_TIMEOUT: ${RAG_REQUEST_TIMEOUT:-600}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
@@ -88,10 +108,16 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      document-processor:
+        condition: service_healthy
     command:
       - php
       - artisan
       - queue:work
+      - rabbitmq
+      - --queue=${RABBITMQ_QUEUE:-knowledge-documents}
       - --sleep=1
       - --tries=3
       - --timeout=900
@@ -112,8 +138,19 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-change-me}
       DB_SSLMODE: disable
       CACHE_STORE: ${CACHE_STORE:-database}
-      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      QUEUE_CONNECTION: rabbitmq
       DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-960}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-knowledge_system}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-knowledge-system-rabbitmq-secret}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-knowledge-documents}
+      RABBITMQ_HEARTBEAT: ${RABBITMQ_HEARTBEAT:-30}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-5}
+      RABBITMQ_READ_TIMEOUT: ${RABBITMQ_READ_TIMEOUT:-65}
+      RABBITMQ_WRITE_TIMEOUT: ${RABBITMQ_WRITE_TIMEOUT:-10}
+      RABBITMQ_CHANNEL_RPC_TIMEOUT: ${RABBITMQ_CHANNEL_RPC_TIMEOUT:-10}
       SESSION_DRIVER: ${SESSION_DRIVER:-database}
       OLLAMA_URL: ${DOCKER_OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
@@ -128,12 +165,16 @@ services:
       RAG_OCR_LANGUAGES: ${RAG_OCR_LANGUAGES:-rus+eng}
       RAG_OCR_DPI: ${RAG_OCR_DPI:-200}
       RAG_OCR_PAGE_TIMEOUT: ${RAG_OCR_PAGE_TIMEOUT:-120}
+      RAG_LEXICAL_CANDIDATE_LIMIT: ${RAG_LEXICAL_CANDIDATE_LIMIT:-1000}
       RAG_REQUEST_TIMEOUT: ${RAG_REQUEST_TIMEOUT:-600}
       N8N_INDEX_WEBHOOK_URL: ${DOCKER_N8N_INDEX_WEBHOOK_URL:-http://n8n:5678/webhook/knowledge-index}
       N8N_SEARCH_WEBHOOK_URL: ${DOCKER_N8N_SEARCH_WEBHOOK_URL:-http://n8n:5678/webhook/knowledge-search}
       N8N_DELETE_WEBHOOK_URL: ${DOCKER_N8N_DELETE_WEBHOOK_URL:-http://n8n:5678/webhook/knowledge-delete}
       N8N_TIMEOUT: ${N8N_TIMEOUT:-600}
       RAG_INTERNAL_TOKEN: ${RAG_INTERNAL_TOKEN:-change-me-rag-token}
+      DOCUMENT_PROCESSOR_URL: ${DOCKER_DOCUMENT_PROCESSOR_URL:-http://document-processor:8000}
+      DOCUMENT_PROCESSOR_TOKEN: ${DOCUMENT_PROCESSOR_TOKEN:-change-me-document-processor-token}
+      DOCUMENT_PROCESSOR_TIMEOUT: ${DOCUMENT_PROCESSOR_TIMEOUT:-600}
       WAIT_FOR_DB: "true"
       OPTIMIZE_LARAVEL: "false"
     volumes:
@@ -195,40 +236,78 @@ services:
         max-size: 20m
         max-file: "5"
 
-  ollama:
-    image: ollama/ollama:latest
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.2.9-management-alpine}
     restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-knowledge_system}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-knowledge-system-rabbitmq-secret}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     volumes:
-      - ollama-data:/root/.ollama
+      - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 10s
+      start_period: 20s
     logging:
       driver: json-file
       options:
         max-size: 20m
         max-file: "5"
 
-  ollama-init:
-    image: ollama/ollama:latest
-    restart: "no"
-    depends_on:
-      ollama:
-        condition: service_healthy
+  document-processor:
+    build:
+      context: ./services/document-processor
+    image: knowledge-system-document-processor:latest
+    restart: unless-stopped
     environment:
-      OLLAMA_HOST: http://ollama:11434
+      DOCUMENT_PROCESSOR_TOKEN: ${DOCUMENT_PROCESSOR_TOKEN:-change-me-document-processor-token}
+      DOCUMENT_PROCESSOR_MAX_FILE_MB: ${DOCUMENT_PROCESSOR_MAX_FILE_MB:-100}
+      DOCUMENT_PROCESSOR_MAX_PAGES: ${DOCUMENT_PROCESSOR_MAX_PAGES:-2000}
+      DOCUMENT_PROCESSOR_OCR_MIN_TEXT_CHARS: ${DOCUMENT_PROCESSOR_OCR_MIN_TEXT_CHARS:-40}
+    ports:
+      - "${DOCUMENT_PROCESSOR_PORT:-8001}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - ollama pull "$${OLLAMA_MODEL}" && ollama pull "$${OLLAMA_EMBED_MODEL}"
+    entrypoint: ["/bin/sh", "/opt/knowledge/ollama-entrypoint.sh"]
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-data:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/opt/knowledge/ollama-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "OLLAMA_HOST=127.0.0.1:11434 ollama show \"$${OLLAMA_MODEL}\" >/dev/null 2>&1 && OLLAMA_HOST=127.0.0.1:11434 ollama show \"$${OLLAMA_EMBED_MODEL}\" >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 180
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
 
   n8n:
     build:
@@ -290,3 +369,4 @@ volumes:
   ollama-data:
   postgres-data:
   qdrant-data:
+  rabbitmq-data:

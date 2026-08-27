@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { wayfinder } from '@laravel/vite-plugin-wayfinder';
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
@@ -5,6 +6,19 @@ import laravel from 'laravel-vite-plugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+    resolve: {
+        alias: [
+            {
+                find: /^swagger-ui$/,
+                replacement: fileURLToPath(
+                    new URL(
+                        './node_modules/swagger-ui/dist/swagger-ui-es-bundle-core.js',
+                        import.meta.url,
+                    ),
+                ),
+            },
+        ],
+    },
     plugins: [
         laravel({
             input: ['resources/js/app.ts'],

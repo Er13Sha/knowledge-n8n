@@ -17,6 +17,8 @@ class QdrantVectorStore
                 'vectors' => ['size' => $vectorSize, 'distance' => 'Cosine'],
             ])->throw();
 
+            $this->ensurePayloadIndexes([]);
+
             return;
         }
 
@@ -31,6 +33,9 @@ class QdrantVectorStore
                 $vectorSize,
             ));
         }
+
+        $payloadSchema = $response->json('result.payload_schema', []);
+        $this->ensurePayloadIndexes(is_array($payloadSchema) ? $payloadSchema : []);
     }
 
     public function deleteDocument(int $documentId, int $userId): void
@@ -54,52 +59,48 @@ class QdrantVectorStore
         }
     }
 
-    /** @return list<array{payload?: array<string, mixed>}> */
-    public function scroll(int $userId, ?int $documentId = null): array
-    {
-        $points = [];
-        $offset = null;
+    /**
+     * @param  list<int>  $documentIds
+     * @return list<array{payload?: array<string, mixed>}>
+     */
+    public function fullTextSearch(
+        string $query,
+        int $userId,
+        ?int $documentId = null,
+        array $documentIds = [],
+    ): array {
+        $filter = $this->searchFilter($userId, $documentId, $documentIds);
+        $filter['must'][] = [
+            'key' => 'text',
+            'match' => ['text_any' => $query],
+        ];
 
-        do {
-            $body = [
-                'filter' => $this->searchFilter($userId, $documentId),
-                'limit' => (int) config('services.rag.lexical_scroll_batch_size', 256),
-                'with_payload' => ['document_id', 'original_name', 'page', 'chunk_index', 'text'],
-                'with_vector' => false,
-            ];
+        $response = $this->request()->post($this->collectionUrl('/points/scroll'), [
+            'filter' => $filter,
+            'limit' => (int) config('services.rag.lexical_candidate_limit', 1000),
+            'with_payload' => ['document_id', 'original_name', 'page', 'chunk_index', 'text'],
+            'with_vector' => false,
+        ]);
 
-            if ($offset !== null) {
-                $body['offset'] = $offset;
-            }
+        if ($response->notFound()) {
+            return [];
+        }
 
-            $response = $this->request()->post($this->collectionUrl('/points/scroll'), $body);
+        $response->throw();
+        $points = $response->json('result.points', []);
 
-            if ($response->notFound()) {
-                return [];
-            }
-
-            $response->throw();
-            $page = $response->json('result.points', []);
-
-            if (is_array($page)) {
-                array_push($points, ...$page);
-            }
-
-            $offset = $response->json('result.next_page_offset');
-        } while ($offset !== null);
-
-        return $points;
+        return is_array($points) ? array_values($points) : [];
     }
 
     /**
      * @param  list<float>  $vector
      * @return list<array{score?: float|int, payload?: array<string, mixed>}>
      */
-    public function semanticSearch(array $vector, int $userId, ?int $documentId = null): array
+    public function semanticSearch(array $vector, int $userId, ?int $documentId = null, array $documentIds = []): array
     {
         $response = $this->request()->post($this->collectionUrl('/points/search'), [
             'vector' => $vector,
-            'filter' => $this->searchFilter($userId, $documentId),
+            'filter' => $this->searchFilter($userId, $documentId, $documentIds),
             'limit' => (int) config('services.rag.top_k', 6),
             'score_threshold' => (float) config('services.rag.score_threshold', 0.25),
             'with_payload' => true,
@@ -135,6 +136,34 @@ class QdrantVectorStore
             .$suffix;
     }
 
+    /** @param array<string, mixed> $payloadSchema */
+    private function ensurePayloadIndexes(array $payloadSchema): void
+    {
+        $indexes = [
+            'document_id' => 'integer',
+            'user_id' => 'integer',
+            'text' => [
+                'type' => 'text',
+                'tokenizer' => 'word',
+                'min_token_len' => 2,
+                'max_token_len' => 40,
+                'lowercase' => true,
+                'phrase_matching' => true,
+            ],
+        ];
+
+        foreach ($indexes as $fieldName => $fieldSchema) {
+            if (array_key_exists($fieldName, $payloadSchema)) {
+                continue;
+            }
+
+            $this->request()->put($this->collectionUrl('/index?wait=true'), [
+                'field_name' => $fieldName,
+                'field_schema' => $fieldSchema,
+            ])->throw();
+        }
+    }
+
     /** @return array{must: list<array{key: string, match: array{value: int}}>} */
     private function documentFilter(int $documentId, int $userId): array
     {
@@ -146,17 +175,26 @@ class QdrantVectorStore
         ];
     }
 
-    /** @return array{must: list<array{key: string, match: array{value: int}}>} */
-    private function searchFilter(int $userId, ?int $documentId): array
+    /**
+     * @param  list<int>  $documentIds
+     * @return array{must: list<array<string, mixed>>}
+     */
+    private function searchFilter(int $userId, ?int $documentId, array $documentIds): array
     {
-        $conditions = [
-            ['key' => 'user_id', 'match' => ['value' => $userId]],
-        ];
-
         if ($documentId !== null) {
-            $conditions[] = ['key' => 'document_id', 'match' => ['value' => $documentId]];
+            return ['must' => [
+                ['key' => 'document_id', 'match' => ['value' => $documentId]],
+            ]];
         }
 
-        return ['must' => $conditions];
+        if ($documentIds !== []) {
+            return ['must' => [
+                ['key' => 'document_id', 'match' => ['any' => array_values($documentIds)]],
+            ]];
+        }
+
+        return ['must' => [
+            ['key' => 'user_id', 'match' => ['value' => $userId]],
+        ]];
     }
 }

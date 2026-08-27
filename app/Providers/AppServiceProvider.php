@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\KnowledgeDocument;
+use App\Policies\KnowledgeDocumentPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -23,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::policy(KnowledgeDocument::class, KnowledgeDocumentPolicy::class);
         $this->configureDefaults();
     }
 

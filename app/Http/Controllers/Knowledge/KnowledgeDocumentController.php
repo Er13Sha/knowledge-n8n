@@ -5,14 +5,18 @@ namespace App\Http\Controllers\Knowledge;
 use App\Enums\KnowledgeDocumentStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\StoreKnowledgeDocumentRequest;
+use App\Http\Requests\Knowledge\UpdateKnowledgeDocumentRequest;
 use App\Http\Resources\KnowledgeDocumentResource;
 use App\Jobs\DeleteKnowledgeDocumentIndex;
 use App\Jobs\IndexKnowledgeDocument;
 use App\Models\Knowledge;
 use App\Models\KnowledgeDocument;
+use App\Models\User;
+use App\Services\Access\AccessManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -20,15 +24,17 @@ class KnowledgeDocumentController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $documents = KnowledgeDocument::query()
-            ->whereBelongsTo($request->user())
+        Gate::authorize('viewAny', KnowledgeDocument::class);
+
+        $documents = app(AccessManager::class)
+            ->visibleDocuments($request->user())
             ->with(['knowledge', 'user'])
             ->latest()
             ->get();
 
         return response()->json([
             'data' => KnowledgeDocumentResource::collection($documents)->resolve(),
-            'meta' => $this->knowledgeBaseMeta(),
+            'meta' => $this->knowledgeBaseMeta($request->user()),
         ]);
     }
 
@@ -70,7 +76,15 @@ class KnowledgeDocumentController extends Controller
 
     public function show(Request $request, KnowledgeDocument $knowledgeDocument): StreamedResponse
     {
-        abort_unless($knowledgeDocument->user_id === $request->user()->id, 404);
+        Gate::authorize('viewAny', KnowledgeDocument::class);
+        abort_unless(
+            app(AccessManager::class)->canAccessDocument(
+                $request->user(),
+                $knowledgeDocument,
+                AccessManager::KnowledgeRead,
+            ),
+            404,
+        );
 
         $disk = Storage::disk($knowledgeDocument->disk);
 
@@ -90,7 +104,7 @@ class KnowledgeDocumentController extends Controller
 
     public function destroy(Request $request, KnowledgeDocument $knowledgeDocument): JsonResponse
     {
-        abort_unless($knowledgeDocument->user_id === $request->user()->id, 404);
+        Gate::authorize('delete', $knowledgeDocument);
 
         $documentId = $knowledgeDocument->id;
         $userId = $knowledgeDocument->user_id;
@@ -106,7 +120,7 @@ class KnowledgeDocumentController extends Controller
 
     public function retryIndexing(Request $request, KnowledgeDocument $knowledgeDocument): JsonResponse
     {
-        abort_unless($knowledgeDocument->user_id === $request->user()->id, 404);
+        Gate::authorize('update', $knowledgeDocument);
 
         $knowledgeDocument->forceFill([
             'status' => KnowledgeDocumentStatus::Pending,
@@ -122,11 +136,27 @@ class KnowledgeDocumentController extends Controller
         ]);
     }
 
+    public function update(UpdateKnowledgeDocumentRequest $request, KnowledgeDocument $knowledgeDocument): JsonResponse
+    {
+        Gate::authorize('update', $knowledgeDocument);
+
+        $knowledge = $knowledgeDocument->knowledge;
+        abort_unless($knowledge !== null, 404);
+
+        $knowledge->update($request->validated());
+
+        return response()->json([
+            'data' => KnowledgeDocumentResource::make($knowledgeDocument->fresh(['knowledge', 'user']))->resolve(),
+        ]);
+    }
+
     /**
      * @return array{upload: array{max_pdf_mb: int}, form: array{departments: list<array{value: string, title: string}>, document_types: list<array{value: string, title: string}>}, services: array{n8n_index_configured: bool, n8n_search_configured: bool, ollama_url: mixed, ollama_model: mixed}}
      */
-    private function knowledgeBaseMeta(): array
+    private function knowledgeBaseMeta(User $user): array
     {
+        $access = app(AccessManager::class);
+
         return [
             'upload' => [
                 'max_pdf_mb' => intdiv(StoreKnowledgeDocumentRequest::MaxPdfKilobytes, 1024),
@@ -141,6 +171,8 @@ class KnowledgeDocumentController extends Controller
                 'ollama_url' => config('services.ollama.url'),
                 'ollama_model' => config('services.ollama.model'),
             ],
+            'permissions' => $access->permissionKeys($user),
+            'is_super_admin' => $user->is_super_admin,
         ];
     }
 }

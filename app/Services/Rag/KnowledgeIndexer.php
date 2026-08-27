@@ -10,8 +10,7 @@ use RuntimeException;
 class KnowledgeIndexer
 {
     public function __construct(
-        private PdfTextExtractor $pdfTextExtractor,
-        private TextProcessor $textProcessor,
+        private DocumentProcessorClient $documentProcessor,
         private OllamaClient $ollamaClient,
         private QdrantVectorStore $vectorStore,
     ) {}
@@ -25,18 +24,9 @@ class KnowledgeIndexer
             throw new RuntimeException('PDF-файл не найден в хранилище.');
         }
 
-        $pages = $this->pdfTextExtractor->extractPages($disk->path($document->path));
-        $chunks = [];
-
-        foreach ($pages as $pageIndex => $pageText) {
-            foreach ($this->textProcessor->split(
-                $pageText,
-                (int) config('services.rag.chunk_size', 1400),
-                (int) config('services.rag.chunk_overlap', 200),
-            ) as $pageChunk) {
-                $chunks[] = ['page' => $pageIndex + 1, 'text' => $pageChunk];
-            }
-        }
+        $preparedDocument = $this->documentProcessor->prepare($disk->path($document->path));
+        $pages = $preparedDocument['pages'];
+        $chunks = $preparedDocument['chunks'];
 
         if ($chunks === []) {
             throw new RuntimeException('В PDF нет текста, который удалось извлечь или распознать.');
@@ -56,7 +46,7 @@ class KnowledgeIndexer
                     'user_id' => $document->user_id,
                     'original_name' => $document->original_name,
                     'page' => $chunk['page'],
-                    'chunk_index' => $chunkIndex,
+                    'chunk_index' => $chunk['chunk_index'],
                     'text' => $chunk['text'],
                 ],
             ];

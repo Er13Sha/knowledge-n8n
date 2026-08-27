@@ -15,21 +15,20 @@ RUN apt-get -o Acquire::Retries=5 update \
         git \
         ca-certificates \
         curl \
-        poppler-utils \
         libicu-dev \
-        tesseract-ocr \
+        libonig-dev \
         libpq-dev \
-        tesseract-ocr-eng \
         libzip-dev \
-        tesseract-ocr-rus \
         unzip \
         xz-utils \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
         intl \
+        mbstring \
         opcache \
         pcntl \
         pdo_pgsql \
+        sockets \
         zip \
     && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
