@@ -80,8 +80,8 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ ! -f docker-compose.yml ]]; then
-    echo "Run this script from the project root containing docker-compose.yml." >&2
+if [[ ! -f compose.yaml ]]; then
+    echo "Run this script from the project root containing compose.yaml." >&2
     exit 1
 fi
 

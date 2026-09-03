@@ -12,6 +12,7 @@ RUN apt-get -o Acquire::Retries=5 update \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-rus \
+        libreoffice-writer libreoffice-calc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

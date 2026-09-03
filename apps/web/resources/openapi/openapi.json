@@ -1,0 +1,2453 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Knowledge System API",
+        "version": "1.0.0",
+        "description": "API управления базой знаний, сотрудниками, правами доступа и RAG-поиском.\nПользовательские методы используют cookie-сессию Laravel. В Swagger UI\ncookie и CSRF-заголовок передаются автоматически из текущей сессии.\n"
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "Текущий сервер"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Авторизация"
+        },
+        {
+            "name": "База знаний"
+        },
+        {
+            "name": "Поиск"
+        },
+        {
+            "name": "Сотрудники и доступы"
+        },
+        {
+            "name": "Настройки"
+        },
+        {
+            "name": "Внутренний RAG"
+        }
+    ],
+    "paths": {
+        "/api/auth/login": {
+            "post": {
+                "tags": ["Авторизация"],
+                "summary": "Войти в систему",
+                "operationId": "login",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Пользователь авторизован",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/auth/user": {
+            "get": {
+                "tags": ["Авторизация"],
+                "summary": "Получить текущего пользователя",
+                "operationId": "currentUser",
+                "responses": {
+                    "200": {
+                        "description": "Текущий пользователь с ролями и разрешениями",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "tags": ["Авторизация"],
+                "summary": "Выйти из системы",
+                "operationId": "logout",
+                "responses": {
+                    "204": {
+                        "description": "Сессия завершена"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                }
+            }
+        },
+        "/api/knowledge/documents": {
+            "get": {
+                "tags": ["База знаний"],
+                "summary": "Получить доступные документы с фильтрами",
+                "operationId": "listKnowledgeDocuments",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Поиск по названию документа или имени PDF.",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255
+                        }
+                    },
+                    {
+                        "name": "department_id",
+                        "in": "query",
+                        "description": "Фильтр по отделу.",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/DepartmentId"
+                        }
+                    },
+                    {
+                        "name": "doc_type",
+                        "in": "query",
+                        "description": "Фильтр по типу документа.",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/DocumentType"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Фильтр по статусу индексации.",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/KnowledgeDocumentStatus"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Документы и метаданные формы",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeDocumentsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["База знаний"],
+                "summary": "Добавить PDF-документ",
+                "operationId": "createKnowledgeDocument",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateKnowledgeDocumentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Документ создан и поставлен в очередь индексации",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeDocumentMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/knowledge/documents/{knowledgeDocument}": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/KnowledgeDocumentId"
+                }
+            ],
+            "get": {
+                "tags": ["База знаний"],
+                "summary": "Открыть исходный PDF",
+                "operationId": "showKnowledgeDocument",
+                "responses": {
+                    "200": {
+                        "description": "PDF-файл",
+                        "headers": {
+                            "Content-Disposition": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/pdf": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            },
+            "patch": {
+                "tags": ["База знаний"],
+                "summary": "Изменить данные документа",
+                "operationId": "updateKnowledgeDocument",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/KnowledgeDocumentMetadata"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Документ обновлён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeDocumentDataResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["База знаний"],
+                "summary": "Удалить документ",
+                "operationId": "deleteKnowledgeDocument",
+                "responses": {
+                    "204": {
+                        "description": "Документ удалён"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/api/knowledge/documents/{knowledgeDocument}/retry-indexing": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/KnowledgeDocumentId"
+                }
+            ],
+            "post": {
+                "tags": ["База знаний"],
+                "summary": "Повторить индексацию документа",
+                "operationId": "retryKnowledgeDocumentIndexing",
+                "responses": {
+                    "200": {
+                        "description": "Документ повторно поставлен в очередь",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeDocumentMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/api/knowledge/search": {
+            "post": {
+                "tags": ["Поиск"],
+                "summary": "Выполнить полнотекстовый поиск или задать вопрос RAG",
+                "operationId": "searchKnowledge",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Ответ и найденные источники",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeSearchResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "502": {
+                        "$ref": "#/components/responses/UpstreamError"
+                    }
+                }
+            }
+        },
+        "/api/knowledge/search/{interaction}/feedback": {
+            "post": {
+                "tags": ["Поиск"],
+                "summary": "Оценить ответ поиска",
+                "operationId": "rateKnowledgeSearch",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/KnowledgeSearchInteractionId"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/KnowledgeSearchFeedbackRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Оценка сохранена",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeSearchFeedbackResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/api/admin/knowledge/search-quality": {
+            "get": {
+                "tags": ["Поиск"],
+                "summary": "Получить статистику качества AI-поиска",
+                "operationId": "knowledgeSearchQuality",
+                "responses": {
+                    "200": {
+                        "description": "Статистика AI-поиска",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/KnowledgeSearchQualityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/admin/departments": {
+            "get": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Получить отделы",
+                "description": "Доступно только главному администратору.",
+                "operationId": "listDepartments",
+                "responses": {
+                    "200": {
+                        "description": "Список отделов",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminDepartmentsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Создать отдел",
+                "description": "Доступно только главному администратору.",
+                "operationId": "createDepartment",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DepartmentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Отдел создан",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminDepartmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/admin/departments/{department}": {
+            "patch": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Изменить отдел",
+                "description": "Код отдела изменить нельзя. Доступно только главному администратору.",
+                "operationId": "updateDepartment",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/DepartmentId"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DepartmentUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Отдел обновлён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminDepartmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Удалить отдел",
+                "description": "Удаление невозможно, если отдел используется сотрудниками или документами.",
+                "operationId": "deleteDepartment",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/DepartmentId"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Отдел удалён"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "description": "Отдел используется сотрудниками или документами"
+                    }
+                }
+            }
+        },
+        "/api/admin/employees": {
+            "get": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Получить сотрудников, роли и разрешения",
+                "description": "Доступно только главному администратору.",
+                "operationId": "listEmployees",
+                "responses": {
+                    "200": {
+                        "description": "Сотрудники и настройки доступа",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminEmployeesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Создать сотрудника",
+                "description": "Доступно только главному администратору.",
+                "operationId": "createEmployee",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateEmployeeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Сотрудник создан",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminEmployeeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/admin/employees/{user}": {
+            "patch": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Изменить сотрудника и его доступы",
+                "description": "Доступно только главному администратору.",
+                "operationId": "updateEmployee",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/UserId"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateEmployeeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Сотрудник обновлён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminEmployeeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/settings/profile": {
+            "patch": {
+                "tags": ["Настройки"],
+                "summary": "Обновить профиль",
+                "operationId": "updateProfile",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProfileUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Профиль обновлён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Настройки"],
+                "summary": "Удалить текущий профиль",
+                "operationId": "deleteProfile",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProfileDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Профиль удалён"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/settings/password": {
+            "put": {
+                "tags": ["Настройки"],
+                "summary": "Изменить пароль",
+                "operationId": "updatePassword",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PasswordUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Пароль обновлён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "429": {
+                        "description": "Превышен лимит запросов"
+                    }
+                }
+            }
+        },
+        "/api/internal/rag/index": {
+            "post": {
+                "tags": ["Внутренний RAG"],
+                "summary": "Проиндексировать документ",
+                "description": "Внутренний endpoint для n8n. Токен передаётся в теле запроса.",
+                "operationId": "indexDocumentInternally",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalIndexRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Документ проиндексирован",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalIndexResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/InternalUnauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "502": {
+                        "$ref": "#/components/responses/InternalUpstreamError"
+                    }
+                }
+            }
+        },
+        "/api/internal/rag/search": {
+            "post": {
+                "tags": ["Внутренний RAG"],
+                "summary": "Выполнить внутренний полнотекстовый или RAG-поиск",
+                "description": "Внутренний endpoint для n8n. Токен передаётся в теле запроса.",
+                "operationId": "searchKnowledgeInternally",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalSearchRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Результат поиска без внешней обёртки data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SearchResult"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/InternalUnauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/internal/rag/delete": {
+            "post": {
+                "tags": ["Внутренний RAG"],
+                "summary": "Удалить векторный индекс документа",
+                "description": "Внутренний endpoint для n8n. Токен передаётся в теле запроса.",
+                "operationId": "deleteDocumentIndexInternally",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Индекс удалён",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["ok"],
+                                    "properties": {
+                                        "ok": {
+                                            "type": "boolean",
+                                            "const": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/InternalUnauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/admin/roles": {
+            "post": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Создать кастомную роль",
+                "operationId": "createRole",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Роль создана",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminRoleResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/api/admin/roles/{role}": {
+            "put": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Изменить кастомную роль",
+                "operationId": "updateRole",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/RoleKey"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Роль обновлена",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminRoleResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Сотрудники и доступы"],
+                "summary": "Удалить кастомную роль",
+                "operationId": "deleteRole",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/RoleKey"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Роль удалена"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "description": "Роль назначена сотрудникам"
+                    }
+                }
+            }
+        },
+        "/api/extractions": {
+            "get": {
+                "tags": ["Извлечение данных"],
+                "summary": "Список результатов извлечения",
+                "responses": {
+                    "200": {
+                        "description": "JSON response"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Извлечение данных"],
+                "summary": "Загрузить файл на извлечение",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["document"],
+                                "properties": {
+                                    "document": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "JSON response"
+                    },
+                    "422": {
+                        "description": "Ошибка валидации"
+                    }
+                }
+            }
+        },
+        "/api/extractions/{extraction}": {
+            "get": {
+                "tags": ["Извлечение данных"],
+                "summary": "Получить результат",
+                "parameters": [
+                    {
+                        "name": "extraction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON response"
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Извлечение данных"],
+                "summary": "Удалить результат",
+                "parameters": [
+                    {
+                        "name": "extraction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    }
+                }
+            }
+        },
+        "/api/extractions/{extraction}/retry": {
+            "post": {
+                "tags": ["Извлечение данных"],
+                "summary": "Повторить обработку",
+                "parameters": [
+                    {
+                        "name": "extraction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON response"
+                    }
+                }
+            }
+        },
+        "/api/extractions/{extraction}/download": {
+            "get": {
+                "tags": ["Извлечение данных"],
+                "summary": "Скачать исходный файл",
+                "parameters": [
+                    {
+                        "name": "extraction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON response"
+                    }
+                }
+            }
+        },
+        "/api/extractions/{extraction}/download-json": {
+            "get": {
+                "tags": ["Извлечение данных"],
+                "summary": "Скачать JSON результата",
+                "parameters": [
+                    {
+                        "name": "extraction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON response"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "sessionAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "laravel_session",
+                "description": "Cookie-сессия Laravel. Swagger UI использует текущую сессию браузера."
+            }
+        },
+        "parameters": {
+            "KnowledgeSearchInteractionId": {
+                "name": "interaction",
+                "in": "path",
+                "required": true,
+                "schema": { "type": "integer", "minimum": 1 }
+            },
+            "KnowledgeDocumentId": {
+                "name": "knowledgeDocument",
+                "in": "path",
+                "required": true,
+                "description": "ID документа",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "UserId": {
+                "name": "user",
+                "in": "path",
+                "required": true,
+                "description": "ID сотрудника",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RoleKey": {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "description": "Ключ роли",
+                "schema": {
+                    "type": "string",
+                    "enum": ["employee", "admin"]
+                }
+            },
+            "DepartmentId": {
+                "name": "department",
+                "in": "path",
+                "required": true,
+                "description": "Код отдела",
+                "schema": {
+                    "$ref": "#/components/schemas/DepartmentId"
+                }
+            }
+        },
+        "responses": {
+            "Unauthorized": {
+                "description": "Пользователь не авторизован",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "InternalUnauthorized": {
+                "description": "Неверный внутренний токен RAG",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "required": ["detail"],
+                            "properties": {
+                                "detail": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Forbidden": {
+                "description": "Недостаточно прав",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "Ресурс не найден",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "ValidationError": {
+                "description": "Ошибка валидации",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        }
+                    }
+                }
+            },
+            "UpstreamError": {
+                "description": "Ошибка n8n или RAG-сервиса",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "InternalUpstreamError": {
+                "description": "Ошибка обработки документа",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "required": ["detail"],
+                            "properties": {
+                                "detail": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "schemas": {
+            "LoginRequest": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "remember": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                }
+            },
+            "AuthUserResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AuthUser"
+                    }
+                }
+            },
+            "AuthUser": {
+                "type": "object",
+                "required": ["id", "name", "email"],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "email_verified_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "department_id": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DepartmentId"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "is_super_admin": {
+                        "type": "boolean"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RoleSummary"
+                        }
+                    },
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    }
+                }
+            },
+            "RoleSummary": {
+                "type": "object",
+                "required": ["key", "name", "scope"],
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["global", "department"]
+                    }
+                }
+            },
+            "DepartmentId": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                "maxLength": 100
+            },
+            "DocumentType": {
+                "type": "string",
+                "enum": [
+                    "order",
+                    "regulation",
+                    "instruction",
+                    "policy",
+                    "contract",
+                    "other"
+                ]
+            },
+            "PermissionKey": {
+                "type": "string",
+                "enum": [
+                    "knowledge.read",
+                    "knowledge.create",
+                    "knowledge.update",
+                    "knowledge.delete",
+                    "employees.manage",
+                    "access.manage"
+                ]
+            },
+            "PermissionKeys": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                    "$ref": "#/components/schemas/PermissionKey"
+                }
+            },
+            "KnowledgeDocumentMetadata": {
+                "type": "object",
+                "required": [
+                    "department_id",
+                    "title",
+                    "doc_type",
+                    "approved_at"
+                ],
+                "properties": {
+                    "department_id": {
+                        "$ref": "#/components/schemas/DepartmentId"
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "doc_type": {
+                        "$ref": "#/components/schemas/DocumentType"
+                    },
+                    "approved_at": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                }
+            },
+            "CreateKnowledgeDocumentRequest": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/KnowledgeDocumentMetadata"
+                    },
+                    {
+                        "type": "object",
+                        "required": ["document"],
+                        "properties": {
+                            "document": {
+                                "type": "string",
+                                "format": "binary",
+                                "description": "PDF до 50 МБ"
+                            }
+                        }
+                    }
+                ]
+            },
+            "KnowledgeDocument": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "original_name",
+                    "size",
+                    "human_size",
+                    "status",
+                    "status_label",
+                    "index_progress",
+                    "is_searchable"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "original_name": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": ["string", "null"]
+                    },
+                    "department_id": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DepartmentId"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "department_label": {
+                        "type": ["string", "null"]
+                    },
+                    "doc_type": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DocumentType"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "doc_type_label": {
+                        "type": ["string", "null"]
+                    },
+                    "approved_at": {
+                        "type": ["string", "null"],
+                        "format": "date"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "human_size": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "processing", "indexed", "failed"]
+                    },
+                    "status_label": {
+                        "type": "string"
+                    },
+                    "index_progress": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                    },
+                    "is_searchable": {
+                        "type": "boolean"
+                    },
+                    "indexed_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "error_message": {
+                        "type": ["string", "null"]
+                    },
+                    "created_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "user_name": {
+                        "type": ["string", "null"]
+                    }
+                }
+            },
+            "KnowledgeDocumentDataResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/KnowledgeDocument"
+                    }
+                }
+            },
+            "KnowledgeDocumentMutationResponse": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/KnowledgeDocumentDataResponse"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "KnowledgeDocumentsResponse": {
+                "type": "object",
+                "required": ["data", "meta"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/KnowledgeDocument"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/KnowledgeMeta"
+                    }
+                }
+            },
+            "KnowledgeMeta": {
+                "type": "object",
+                "required": [
+                    "upload",
+                    "form",
+                    "services",
+                    "permissions",
+                    "is_super_admin"
+                ],
+                "properties": {
+                    "upload": {
+                        "type": "object",
+                        "required": ["max_pdf_mb"],
+                        "properties": {
+                            "max_pdf_mb": {
+                                "type": "integer",
+                                "example": 50
+                            }
+                        }
+                    },
+                    "form": {
+                        "type": "object",
+                        "required": ["departments", "document_types"],
+                        "properties": {
+                            "departments": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/SelectOption"
+                                }
+                            },
+                            "document_types": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/SelectOption"
+                                }
+                            }
+                        }
+                    },
+                    "services": {
+                        "type": "object",
+                        "required": [
+                            "n8n_index_configured",
+                            "n8n_search_configured",
+                            "ollama_url",
+                            "ollama_model"
+                        ],
+                        "properties": {
+                            "n8n_index_configured": {
+                                "type": "boolean"
+                            },
+                            "n8n_search_configured": {
+                                "type": "boolean"
+                            },
+                            "ollama_url": {
+                                "type": ["string", "null"]
+                            },
+                            "ollama_model": {
+                                "type": ["string", "null"]
+                            }
+                        }
+                    },
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    },
+                    "is_super_admin": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "SelectOption": {
+                "type": "object",
+                "required": ["value", "title"],
+                "properties": {
+                    "value": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    }
+                }
+            },
+            "KnowledgeSearchRequest": {
+                "type": "object",
+                "required": ["question"],
+                "properties": {
+                    "document_id": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "description": "null означает поиск по всем доступным документам"
+                    },
+                    "question": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["fulltext", "rag"],
+                        "default": "rag"
+                    },
+                    "history": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "$ref": "#/components/schemas/SearchHistoryMessage"
+                        }
+                    }
+                }
+            },
+            "InternalSearchRequest": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/KnowledgeSearchRequest"
+                    },
+                    {
+                        "type": "object",
+                        "required": ["token", "user_id", "question"],
+                        "properties": {
+                            "token": {
+                                "type": "string",
+                                "format": "password"
+                            },
+                            "user_id": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "question": {
+                                "type": "string",
+                                "minLength": 2,
+                                "maxLength": 4000
+                            },
+                            "document_ids": {
+                                "type": "array",
+                                "maxItems": 5000,
+                                "items": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "SearchHistoryMessage": {
+                "type": "object",
+                "required": ["role", "content"],
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": ["user", "assistant"]
+                    },
+                    "content": {
+                        "type": "string",
+                        "maxLength": 2000
+                    }
+                }
+            },
+            "KnowledgeSearchResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SearchResult"
+                    }
+                }
+            },
+            "SearchResult": {
+                "type": "object",
+                "required": ["mode", "answer", "sources", "matches"],
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["fulltext", "rag"]
+                    },
+                    "answer": {
+                        "type": "string"
+                    },
+                    "sources": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SearchSource"
+                        }
+                    },
+                    "matches": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SearchMatch"
+                        }
+                    },
+                    "quality": {
+                        "$ref": "#/components/schemas/AnswerQuality"
+                    },
+                    "interaction_id": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            },
+            "AnswerQuality": {
+                "type": "object",
+                "required": [
+                    "answer_status",
+                    "confidence",
+                    "citations_valid",
+                    "cited_source_numbers"
+                ],
+                "properties": {
+                    "answer_status": {
+                        "type": "string",
+                        "enum": [
+                            "grounded",
+                            "insufficient_evidence",
+                            "citation_error"
+                        ]
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"]
+                    },
+                    "citations_valid": { "type": "boolean" },
+                    "cited_source_numbers": {
+                        "type": "array",
+                        "items": { "type": "integer", "minimum": 1 }
+                    }
+                }
+            },
+            "KnowledgeSearchFeedbackRequest": {
+                "type": "object",
+                "required": ["rating"],
+                "properties": {
+                    "rating": {
+                        "type": "string",
+                        "enum": ["positive", "negative"]
+                    },
+                    "comment": { "type": ["string", "null"], "maxLength": 500 }
+                }
+            },
+            "KnowledgeSearchFeedbackResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["rating", "message"],
+                        "properties": {
+                            "rating": {
+                                "type": "string",
+                                "enum": ["positive", "negative"]
+                            },
+                            "message": { "type": "string" }
+                        }
+                    }
+                }
+            },
+            "KnowledgeSearchQualityResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "total_interactions": { "type": "integer" },
+                            "feedback_count": { "type": "integer" },
+                            "positive_feedback": { "type": "integer" },
+                            "negative_feedback": { "type": "integer" },
+                            "positive_rate": { "type": ["number", "null"] },
+                            "citation_errors": { "type": "integer" },
+                            "low_confidence": { "type": "integer" },
+                            "popular_questions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["question", "total"],
+                                    "properties": {
+                                        "question": { "type": "string" },
+                                        "total": { "type": "integer" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SearchSource": {
+                "type": "object",
+                "required": [
+                    "number",
+                    "document_id",
+                    "document_name",
+                    "page",
+                    "excerpt"
+                ],
+                "properties": {
+                    "number": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "document_id": {
+                        "type": "integer"
+                    },
+                    "document_name": {
+                        "type": "string"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "excerpt": {
+                        "type": "string"
+                    },
+                    "score": {
+                        "type": ["number", "null"]
+                    }
+                }
+            },
+            "SearchMatch": {
+                "type": "object",
+                "required": [
+                    "document_id",
+                    "document_name",
+                    "page",
+                    "excerpt",
+                    "matched_terms",
+                    "phrase_matched",
+                    "match_type"
+                ],
+                "properties": {
+                    "document_id": {
+                        "type": "integer"
+                    },
+                    "document_name": {
+                        "type": "string"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "excerpt": {
+                        "type": "string"
+                    },
+                    "matched_terms": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "phrase_matched": {
+                        "type": "boolean"
+                    },
+                    "match_type": {
+                        "type": "string",
+                        "enum": ["exact", "semantic", "hybrid"]
+                    },
+                    "retrieval": {
+                        "type": "string",
+                        "enum": ["lexical", "semantic", "hybrid"]
+                    },
+                    "score": {
+                        "type": ["number", "null"]
+                    }
+                }
+            },
+            "AdminDepartment": {
+                "type": "object",
+                "required": [
+                    "code",
+                    "name",
+                    "is_active",
+                    "users_count",
+                    "knowledge_count"
+                ],
+                "properties": {
+                    "code": {
+                        "$ref": "#/components/schemas/DepartmentId"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "users_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "knowledge_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "DepartmentRequest": {
+                "type": "object",
+                "required": ["code", "name"],
+                "properties": {
+                    "code": {
+                        "$ref": "#/components/schemas/DepartmentId"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "default": true
+                    }
+                }
+            },
+            "DepartmentUpdateRequest": {
+                "type": "object",
+                "required": ["name", "is_active"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "AdminDepartmentResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AdminDepartment"
+                    }
+                }
+            },
+            "AdminDepartmentsResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminDepartment"
+                        }
+                    }
+                }
+            },
+            "AdminEmployee": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "is_super_admin",
+                    "roles",
+                    "permissions"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "department_id": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DepartmentId"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "is_super_admin": {
+                        "type": "boolean"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RoleSummary"
+                        }
+                    },
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    }
+                }
+            },
+            "EmployeeFields": {
+                "type": "object",
+                "required": ["name", "email", "roles"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "department_id": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DepartmentId"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["employee", "admin"]
+                        }
+                    }
+                }
+            },
+            "CreateEmployeeRequest": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/EmployeeFields"
+                    },
+                    {
+                        "type": "object",
+                        "required": ["password"],
+                        "properties": {
+                            "password": {
+                                "type": "string",
+                                "format": "password",
+                                "minLength": 8
+                            }
+                        }
+                    }
+                ]
+            },
+            "UpdateEmployeeRequest": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/EmployeeFields"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "password": {
+                                "type": ["string", "null"],
+                                "format": "password",
+                                "minLength": 8
+                            }
+                        }
+                    }
+                ]
+            },
+            "AdminEmployeeResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AdminEmployee"
+                    }
+                }
+            },
+            "AdminEmployeesResponse": {
+                "type": "object",
+                "required": ["data", "meta"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminEmployee"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/AdminMeta"
+                    }
+                }
+            },
+            "AdminMeta": {
+                "type": "object",
+                "required": [
+                    "roles",
+                    "permissions",
+                    "departments",
+                    "role_scopes"
+                ],
+                "properties": {
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminRole"
+                        }
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminPermission"
+                        }
+                    },
+                    "departments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SelectOption"
+                        }
+                    },
+                    "role_scopes": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SelectOption"
+                        }
+                    }
+                }
+            },
+            "AdminRole": {
+                "type": "object",
+                "required": [
+                    "key",
+                    "name",
+                    "scope",
+                    "is_system",
+                    "permissions"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "enum": ["employee", "admin"]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["global", "department"]
+                    },
+                    "is_system": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "AdminRoleResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AdminRole"
+                    }
+                }
+            },
+            "AdminPermission": {
+                "type": "object",
+                "required": ["key", "name"],
+                "properties": {
+                    "key": {
+                        "$ref": "#/components/schemas/PermissionKey"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "PermissionsRequest": {
+                "type": "object",
+                "properties": {
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    }
+                }
+            },
+            "ProfileUpdateRequest": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    }
+                }
+            },
+            "ProfileDeleteRequest": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                    "password": {
+                        "type": "string",
+                        "format": "password"
+                    }
+                }
+            },
+            "PasswordUpdateRequest": {
+                "type": "object",
+                "required": [
+                    "current_password",
+                    "password",
+                    "password_confirmation"
+                ],
+                "properties": {
+                    "current_password": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "password_confirmation": {
+                        "type": "string",
+                        "format": "password"
+                    }
+                }
+            },
+            "InternalIndexRequest": {
+                "type": "object",
+                "required": [
+                    "token",
+                    "document_id",
+                    "user_id",
+                    "original_name",
+                    "path"
+                ],
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "document_id": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "original_name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "path": {
+                        "type": "string",
+                        "maxLength": 1024
+                    }
+                }
+            },
+            "InternalIndexResponse": {
+                "type": "object",
+                "required": ["ok", "pages", "chunks"],
+                "properties": {
+                    "ok": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "pages": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "chunks": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            },
+            "InternalDeleteRequest": {
+                "type": "object",
+                "required": ["token", "document_id", "user_id"],
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "format": "password"
+                    },
+                    "document_id": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            },
+            "MessageResponse": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ValidationError": {
+                "type": "object",
+                "required": ["message", "errors"],
+                "properties": {
+                    "message": {
+                        "type": "string"
+                    },
+                    "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "RoleRequest": {
+                "type": "object",
+                "required": ["name", "scope", "permissions"],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._-]*$",
+                        "maxLength": 50
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 100
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["global", "department"]
+                    },
+                    "permissions": {
+                        "$ref": "#/components/schemas/PermissionKeys"
+                    }
+                }
+            },
+            "KnowledgeDocumentStatus": {
+                "type": "string",
+                "enum": ["pending", "processing", "indexed", "failed"]
+            }
+        }
+    },
+    "security": [
+        {
+            "sessionAuth": []
+        }
+    ]
+}
